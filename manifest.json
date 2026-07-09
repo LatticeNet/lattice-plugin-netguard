@@ -11,6 +11,8 @@
   "version": "0.1.0-alpha.2",
   "entrypoint": "system-go/lattice-plugin-netguard",
   "publisher": "latticenet",
+  "digest_sha256": "e6b3c13ce7ecbbb3bda8f2926b96048639485ac3198c05aa00d053cc3bf433bf",
+  "signature_ed25519": "0Y0bBILdkktlAzqIMbzP64G0MC8I8o3d+HQvZMFbtpa6XwZwpbXH+mQZFNTPOf0mjKxxUeF0Ppq0sIYzQLMDAA==",
   "ui": {
     "nav": [
       {
