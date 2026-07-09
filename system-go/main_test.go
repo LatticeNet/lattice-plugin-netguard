@@ -14,9 +14,7 @@ type manifestContract struct {
 	Type         string   `json:"type"`
 	Capabilities []string `json:"capabilities"`
 	Interfaces   []struct {
-		Service string   `json:"service"`
-		Methods []string `json:"methods"`
-		Scopes  []string `json:"scopes"`
+		Service string `json:"service"`
 	} `json:"interfaces"`
 }
 
@@ -59,27 +57,41 @@ func TestDescribeMatchesManifestContract(t *testing.T) {
 	}
 }
 
-// Every declared interface must be namespaced under this plugin's id. The
-// server enforces this at load; asserting it here catches a bad manifest before
-// a release is ever cut.
-func TestManifestInterfacesAreNamespaced(t *testing.T) {
+// This plugin declares no interfaces yet, and that is a security decision, not
+// an oversight.
+//
+// netguard's read models are node-scoped. The plugin gateway checks an
+// interface's declared scopes with rbac.Allows(principal, scope, "") — and with
+// an empty node id, a principal restricted to a subset of nodes passes. The
+// RPCHandler signature carries no principal, so an in-core handler cannot
+// re-apply the per-node allowlist the REST handlers enforce. Declaring
+// `netguard/nodes.list` today would therefore let a node-restricted PAT read
+// the whole fleet's firewall posture through the gateway.
+//
+// Until the gateway can express per-node authorization, node-scoped reads stay
+// on the core REST surface (/api/netguard/*), which filters correctly. Any
+// future interface must either be fleet-global or arrive with a
+// principal-aware handler contract.
+//
+// If interfaces are ever added, they must be namespaced under the plugin id —
+// the server enforces that at load; asserting it here catches a bad manifest
+// before a release is cut.
+func TestManifestDeclaresNoUnauthorizableInterfaces(t *testing.T) {
 	manifest := loadManifest(t)
 	if manifest.Type != "system" {
 		t.Fatalf("host-risk capabilities require type=system, got %q", manifest.Type)
 	}
-	if len(manifest.Interfaces) == 0 {
-		t.Fatal("expected declared interfaces")
+	if len(manifest.Interfaces) != 0 {
+		for _, iface := range manifest.Interfaces {
+			if !strings.HasPrefix(iface.Service, manifest.ID+"/") {
+				t.Fatalf("service %q is not namespaced under %q", iface.Service, manifest.ID)
+			}
+		}
+		t.Fatalf("node-scoped interfaces must not be exposed through the plugin gateway "+
+			"until it can enforce per-node allowlists; got %+v", manifest.Interfaces)
 	}
-	for _, iface := range manifest.Interfaces {
-		if !strings.HasPrefix(iface.Service, manifest.ID+"/") {
-			t.Fatalf("service %q is not namespaced under %q", iface.Service, manifest.ID)
-		}
-		if len(iface.Methods) == 0 {
-			t.Fatalf("service %q declares no methods", iface.Service)
-		}
-		if len(iface.Scopes) == 0 {
-			t.Fatalf("service %q declares no scopes", iface.Service)
-		}
+	if resp := handle(request{Action: "call"}); resp.OK {
+		t.Fatal("this subprocess must not answer gateway calls")
 	}
 }
 

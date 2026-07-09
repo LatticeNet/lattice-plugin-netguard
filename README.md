@@ -50,21 +50,31 @@ flow, the watchdog, and the task executor are all **core** (ADR-001 D5/D6,
 design-13 D2). The plugin owns the domain model, the RPC read surface, and the
 dashboard information architecture — not the trust base.
 
-## Interfaces
+## Interfaces — deliberately none yet
 
-Declared in `manifest.json` and served by in-core handlers registered on the
-server's RPC bus, reachable through the audited, scope-checked gateway
-`POST /api/plugins/call`:
+This plugin declares **no `interfaces`**, and that is a security decision.
 
-| Service | Methods | Scopes |
-|---|---|---|
-| `latticenet.netguard/groups` | `list` | `netguard:read` |
-| `latticenet.netguard/zones` | `list` | `netguard:read` |
-| `latticenet.netguard/nodes` | `list` | `netguard:read` |
+netguard's read models are node-scoped. The plugin gateway checks an
+interface's declared scopes with `rbac.Allows(principal, scope, "")`, and with
+an empty node id a principal restricted to a *subset* of nodes passes. The
+`RPCHandler` signature carries no principal, so an in-core handler cannot
+re-apply the per-node allowlist that the REST handlers enforce. Declaring
+`latticenet.netguard/nodes.list` today would let a node-restricted PAT read the
+whole fleet's firewall posture through `POST /api/plugins/call`.
 
-Mutations (`upsert`, `delete`, `adopt`, `plan`) remain on the core REST surface
-under `/api/netguard/*` behind `netguard:admin` + `network:plan` until the
-dashboard contribution slice lands.
+Until the gateway can express per-node authorization, every netguard read and
+mutation stays on the core REST surface under `/api/netguard/*`, which filters
+correctly:
+
+| Route | Scope |
+|---|---|
+| `GET /api/netguard/{groups,zones,nodes}` | `netguard:read` (per-node filtered) |
+| `POST /api/netguard/{groups,zones,bindings}` | `netguard:admin` |
+| `POST /api/netguard/nodes/adopt` | `netguard:admin` |
+| `POST /api/netguard/plan` | `netguard:admin` + `network:plan` |
+
+A future interface must either be fleet-global or arrive with a
+principal-aware handler contract.
 
 ## Building
 
