@@ -1,6 +1,6 @@
 {
   "id": "latticenet.netguard",
-  "name": "netguard (nftables security groups)",
+  "name": "NetGuard (nftables security groups)",
   "type": "system",
   "capabilities": [
     "node:read",
@@ -8,17 +8,17 @@
     "network:apply",
     "task:run"
   ],
-  "version": "0.1.0-alpha.2",
+  "version": "0.1.0-alpha.3",
   "entrypoint": "system-go/lattice-plugin-netguard",
   "publisher": "latticenet",
-  "digest_sha256": "e6b3c13ce7ecbbb3bda8f2926b96048639485ac3198c05aa00d053cc3bf433bf",
-  "signature_ed25519": "0Y0bBILdkktlAzqIMbzP64G0MC8I8o3d+HQvZMFbtpa6XwZwpbXH+mQZFNTPOf0mjKxxUeF0Ppq0sIYzQLMDAA==",
+  "digest_sha256": "db5b14b701c9ab81ff3834f69aab71a3e52dbefe93f94b3623e85ba1b1dd1a59",
+  "signature_ed25519": "oUwxn+5kam7Nkk0Uv4oeirtnc0A8+57uAEA/u33MoWX4kYKuZOhBQkGaBuFXiWw0JlDNzdOU1m0/67su7/JWDg==",
   "ui": {
     "nav": [
       {
         "section": "network-security",
-        "section_title": "Network Security",
-        "title": "Firewall",
+        "section_title": "Network Plugins",
+        "title": "NetGuard",
         "route": "firewall",
         "icon": "Shield",
         "scopes": [
