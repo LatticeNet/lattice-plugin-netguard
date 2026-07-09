@@ -1,0 +1,43 @@
+{
+  "id": "latticenet.netguard",
+  "name": "netguard (nftables security groups)",
+  "type": "system",
+  "capabilities": [
+    "node:read",
+    "network:plan",
+    "network:apply",
+    "task:run"
+  ],
+  "version": "0.1.0-alpha.1",
+  "entrypoint": "system-go/lattice-plugin-netguard",
+  "publisher": "latticenet",
+  "interfaces": [
+    {
+      "service": "latticenet.netguard/groups",
+      "methods": [
+        "list"
+      ],
+      "scopes": [
+        "netguard:read"
+      ]
+    },
+    {
+      "service": "latticenet.netguard/zones",
+      "methods": [
+        "list"
+      ],
+      "scopes": [
+        "netguard:read"
+      ]
+    },
+    {
+      "service": "latticenet.netguard/nodes",
+      "methods": [
+        "list"
+      ],
+      "scopes": [
+        "netguard:read"
+      ]
+    }
+  ]
+}
