@@ -76,6 +76,22 @@ correctly:
 A future interface must either be fleet-global or arrive with a
 principal-aware handler contract.
 
+## Dashboard navigation
+
+The signed manifest contributes a dashboard-owned builtin view under its own
+plugin domain:
+
+```
+Network Security
+└─ netguard (nftables security groups)
+   └─ Firewall
+```
+
+That is intentionally separate from the base `Networking` section and from the
+generic `Platform → Plugins` registry. The plugin contributes only navigation
+metadata and a fixed `component_key`; the dashboard renders the first-party
+NetGuard view and keeps all data access on the core REST API.
+
 ## Building
 
 ```sh
