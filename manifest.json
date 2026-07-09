@@ -8,11 +8,11 @@
     "network:apply",
     "task:run"
   ],
-  "version": "0.1.0-alpha.3",
+  "version": "0.1.0-alpha.4",
   "entrypoint": "system-go/lattice-plugin-netguard",
   "publisher": "latticenet",
-  "digest_sha256": "db5b14b701c9ab81ff3834f69aab71a3e52dbefe93f94b3623e85ba1b1dd1a59",
-  "signature_ed25519": "oUwxn+5kam7Nkk0Uv4oeirtnc0A8+57uAEA/u33MoWX4kYKuZOhBQkGaBuFXiWw0JlDNzdOU1m0/67su7/JWDg==",
+  "digest_sha256": "97f17dbf5bf6ea5f0ad37f529ac006eccc357cc3ca3a0f69a27b0c31363eaf38",
+  "signature_ed25519": "b5OFAoxg+5y4bVhEiHbaX4xm6viyfNx1PYSzWeKHZrvQLTSQ7xXQrWowi89KWxp1TiYhL0dTqYPGFe3JEMlXCw==",
   "ui": {
     "nav": [
       {
