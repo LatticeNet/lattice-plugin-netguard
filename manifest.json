@@ -8,11 +8,11 @@
     "network:apply",
     "task:run"
   ],
-  "version": "0.1.0-alpha.4",
+  "version": "0.1.0-alpha.5",
   "entrypoint": "system-go/lattice-plugin-netguard",
   "publisher": "latticenet",
-  "digest_sha256": "97f17dbf5bf6ea5f0ad37f529ac006eccc357cc3ca3a0f69a27b0c31363eaf38",
-  "signature_ed25519": "b5OFAoxg+5y4bVhEiHbaX4xm6viyfNx1PYSzWeKHZrvQLTSQ7xXQrWowi89KWxp1TiYhL0dTqYPGFe3JEMlXCw==",
+  "digest_sha256": "038861751b2cb16f728790e27464ce9d8495e156b6c33fe968298a0f822361e8",
+  "signature_ed25519": "0b8kDln2puH0OpM9H/gMOgJXfel2dOkyhQyXw9FxUybVnXeYRJv9It0xylS+LPpb3T3j0twpR9c19ATdebl7DA==",
   "ui": {
     "nav": [
       {
@@ -22,7 +22,7 @@
         "route": "firewall",
         "icon": "Shield",
         "scopes": [
-          "network:plan"
+          "netguard:read"
         ]
       }
     ],
