@@ -1,4 +1,5 @@
 {
+  "schema": "lattice.plugin.manifest.v2",
   "id": "latticenet.netguard",
   "name": "NetGuard (nftables security groups)",
   "type": "system",
@@ -8,16 +9,35 @@
     "network:apply",
     "task:run"
   ],
-  "version": "0.1.0-alpha.5",
-  "entrypoint": "system-go/lattice-plugin-netguard",
+  "version": "0.1.0-alpha.6",
   "publisher": "latticenet",
-  "digest_sha256": "038861751b2cb16f728790e27464ce9d8495e156b6c33fe968298a0f822361e8",
-  "signature_ed25519": "0b8kDln2puH0OpM9H/gMOgJXfel2dOkyhQyXw9FxUybVnXeYRJv9It0xylS+LPpb3T3j0twpR9c19ATdebl7DA==",
+  "signature_ed25519": "ZZpLC4VxORbqpoEkPgH/Hm+JBepazSEeK+0Ixk6wHPQ9IBGMsmizozWYo3taP+DhmkSBLrtOuIsfoalMNAO1Aw==",
+  "bundle": {
+    "format": "tar+gzip",
+    "digest_sha256": "a9ac66241e03fb10d2589c80cb5b16d5f5032ba2cd71f3950c4246d0b1de5f93"
+  },
+  "runtime": {
+    "protocol": "stdio-json-v1",
+    "entrypoints": {
+      "linux/amd64": "bin/linux-amd64/plugin",
+      "linux/arm64": "bin/linux-arm64/plugin"
+    }
+  },
+  "ui_runtime": {
+    "mode": "sandbox",
+    "entrypoint": "ui/index.html",
+    "bridge_version": "1"
+  },
+  "compatibility": {
+    "server": "\u003e=0.2.1",
+    "dashboard_host": "\u003e=1",
+    "runtime_protocol": "\u003e=1"
+  },
   "ui": {
     "nav": [
       {
-        "section": "network-security",
-        "section_title": "Network Plugins",
+        "section": "extensions",
+        "section_title": "Extensions",
         "title": "NetGuard",
         "route": "firewall",
         "icon": "Shield",
@@ -30,9 +50,72 @@
       {
         "route": "firewall",
         "title": "NetGuard Firewall",
-        "kind": "builtin",
-        "component_key": "netguard.firewall"
+        "kind": "sandbox"
       }
     ]
-  }
+  },
+  "interfaces": [
+    {
+      "service": "latticenet.netguard/firewall",
+      "methods": [
+        {
+          "name": "overview",
+          "effect": "read",
+          "scopes": [
+            "netguard:read"
+          ]
+        },
+        {
+          "name": "upsert_group",
+          "effect": "write",
+          "scopes": [
+            "netguard:admin"
+          ]
+        },
+        {
+          "name": "delete_group",
+          "effect": "write",
+          "scopes": [
+            "netguard:admin"
+          ]
+        },
+        {
+          "name": "upsert_zone",
+          "effect": "write",
+          "scopes": [
+            "netguard:admin"
+          ]
+        },
+        {
+          "name": "delete_zone",
+          "effect": "write",
+          "scopes": [
+            "netguard:admin"
+          ]
+        },
+        {
+          "name": "upsert_binding",
+          "effect": "write",
+          "scopes": [
+            "netguard:admin"
+          ]
+        },
+        {
+          "name": "adopt",
+          "effect": "write",
+          "scopes": [
+            "netguard:admin"
+          ]
+        },
+        {
+          "name": "plan",
+          "effect": "plan",
+          "scopes": [
+            "netguard:admin",
+            "network:plan"
+          ]
+        }
+      ]
+    }
+  ]
 }

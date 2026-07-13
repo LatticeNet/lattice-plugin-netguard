@@ -1,141 +1,53 @@
 # lattice-plugin-netguard
 
-Official LatticeNet **netguard** system plugin: security-group-grade nftables
-firewall control for a Lattice fleet.
+Official LatticeNet nftables security-group plugin. This repository owns its
+signed Bundle v2 manifest, Linux runtime, sandbox UI, deterministic packer, and
+tests. Current prerelease: `v0.1.0-alpha.6`.
 
-> Status: **alpha, signed at release.** A host-risk plugin without a
-> trusted-publisher signature is refused by the loader unless the operator sets
-> `allow_unsigned_host_risk` (dev only). That is the intended fail-closed
-> behavior; do not work around it.
+## Operator surface
 
-Designed in [`lattice/docs/designs/design-13`](https://github.com/LatticeNet/lattice/blob/main/docs/designs/design-13-wireguard-and-netguard-plugins.md).
+The plugin contributes one Extensions entry with three internal workspaces:
 
-## What it manages
+- **Nodes:** authority state, attached groups, trusted zones, drift anchor,
+  explicit legacy adoption, and approval-plan creation.
+- **Security groups:** ordered ingress/egress allow or deny rules with protocol,
+  inclusive port ranges, and any/zone/CIDR/node/group/domain remotes.
+- **Trusted zones:** reviewed interface and CIDR trust surfaces, including
+  overlay interfaces such as `tailscale0` and `wg0`.
 
-- **Zones** — named trust surfaces built from interfaces and/or CIDRs. The
-  builtin `public`, `loopback`, `wireguard`, and `tailscale` zones resolve
-  per-node facts. Trusting an overlay zone renders `iifname "tailscale0"
-  accept` *before* the broad service allows, so hardening a node cannot sever
-  the overlay its management path rides on.
-- **Security groups** — named, reusable, ordered rule sets attachable to any
-  number of nodes. A rule is `{direction, action, protocol, port_ranges,
-  remote}` where the remote is a CIDR, a node, a group, a zone, a domain
-  (egress only), or `any`. Group-as-remote resolves to member nodes' current
-  addresses at compile time — the cloud "source: sg-xxx" semantic.
-- **Node bindings** — effective firewall = base scaffold + trusted zones +
-  per-node overrides + attached groups, in that order, with provenance.
-- **Reality-first authoring** — the node reports its live listeners and live
-  ruleset; the server diffs intent against reality and proposes changes.
-  Nothing is ever applied silently.
-- **Lockout linting** — a default-drop plan with no path to the management
-  port is refused *before* it reaches a node. Overriding is explicit and
-  audited.
+The UI is built and released from this repository. Deactivation removes the
+navigation and iframe; the base Dashboard has no NetGuard page implementation.
 
-## What it does not do
+## Safety boundary
 
-This subprocess **never mutates a host.** It answers `describe`, `health`, and
-`plan` over the system-plugin stdio contract, and nothing else. Every host
-change flows through the in-core `plan → approve → apply` pipeline and the node
-agent:
+The `lattice-server` core remains the authority for validation, compilation,
+linting, approvals, rollback watchdogs, self-checks, audit, and agent tasks. The
+plugin's own service `latticenet.netguard/firewall` routes to those exact
+operations only after the gateway verifies plugin/service ownership and method
+scopes.
 
-```
-compile (core) → lint → approval + plan_sha256 → operator review
-              → bounded agent task → nft -c → snapshot
-              → dead-man watchdog → nft -f → control-plane selfcheck
-```
+- Read: `netguard:read`
+- Group/zone/binding/adoption writes: `netguard:admin`
+- Plan: `netguard:admin` and `network:plan`
+- Apply: never issued directly from the iframe; a reviewed approval is required
+- Restricted node allowlists: global NetGuard plugin surfaces fail closed
 
-The compiler, the single `table inet lattice_guard` renderer, the approval
-flow, the watchdog, and the task executor are all **core** (ADR-001 D5/D6,
-design-13 D2). The plugin owns the domain model, the RPC read surface, and the
-dashboard information architecture — not the trust base.
+Legacy baselines are observe-only until an operator explicitly adopts them.
+Plans with management lockout findings remain blocked unless the operator checks
+the audited risk-acceptance control.
 
-## Interfaces — deliberately none yet
-
-This plugin declares **no `interfaces`**, and that is a security decision.
-
-netguard's read models are node-scoped. The plugin gateway checks an
-interface's declared scopes with `rbac.Allows(principal, scope, "")`, and with
-an empty node id a principal restricted to a *subset* of nodes passes. The
-`RPCHandler` signature carries no principal, so an in-core handler cannot
-re-apply the per-node allowlist that the REST handlers enforce. Declaring
-`latticenet.netguard/nodes.list` today would let a node-restricted PAT read the
-whole fleet's firewall posture through `POST /api/plugins/call`.
-
-Until the gateway can express per-node authorization, every netguard read and
-mutation stays on the core REST surface under `/api/netguard/*`, which filters
-correctly:
-
-| Route | Scope |
-|---|---|
-| `GET /api/netguard/{groups,zones,nodes}` | `netguard:read` (per-node filtered) |
-| `POST /api/netguard/{groups,zones,bindings}` | `netguard:admin` |
-| `POST /api/netguard/nodes/adopt` | `netguard:admin` |
-| `POST /api/netguard/plan` | `netguard:admin` + `network:plan` |
-
-A future interface must either be fleet-global or arrive with a
-principal-aware handler contract.
-
-## Dashboard navigation
-
-The signed manifest contributes a dashboard-owned builtin view under its own
-plugin domain:
-
-```
-Network Security
-└─ netguard (nftables security groups)
-   └─ Firewall
-```
-
-That is intentionally separate from the base `Networking` section and from the
-generic `Platform → Plugins` registry. The plugin contributes only navigation
-metadata and a fixed `component_key`; the dashboard renders the first-party
-NetGuard view and keeps all data access on the core REST API.
-
-## Building
+## Verification
 
 ```sh
-cd system-go
-go test ./...
-go build -trimpath -ldflags='-s -w' -o lattice-plugin-netguard .
+go test -race ./system-go/...
+go test -race ./tools/pluginpack/...
+cd ui
+npm ci
+npm test
+npm run typecheck
+npm run build
+npm run verify:build
 ```
 
-Zero dependencies, pure Go, no CGO — the same posture as the rest of Lattice.
-
-## Releasing
-
-The manifest must be signed by a **trusted publisher** before a host-risk
-plugin will load. The publisher's ed25519 seed is operator-held and is never
-committed:
-
-```sh
-# from a lattice-server checkout
-go run ./cmd/pluginsign \
-  -manifest ../lattice-plugin-netguard/manifest.json \
-  -artifact ../lattice-plugin-netguard/system-go/lattice-plugin-netguard \
-  -seed /path/to/latticenet-seed.bin \
-  -update-digest -write
-```
-
-`pluginsign` reuses the server's own `plugin.SigningPayload`, so the signed
-bytes match the verifier byte-for-byte (including the `ui`/`interfaces`
-extension), then self-verifies before writing.
-
-Alpha releases must be cut as prereleases (`v0.1.0-alpha.N`) and must not
-become GitHub `Latest`.
-
-## Install
-
-Installation is deliberately **not** remote. Drop the verified bundle on disk:
-
-```
-<LATTICE_PLUGIN_DIR>/netguard/manifest.json
-<LATTICE_PLUGIN_DIR>/netguard/artifact      # the built binary, fixed filename
-```
-
-The loader re-verifies the digest at start, stages a 0700 copy, and executes
-that copy in a confined working directory with an environment allowlist. The
-marketplace index is a discovery CDN, never a trust root.
-
-## License
-
-MIT — see [LICENSE](LICENSE).
+Build and sign with Go `1.26.4`, Node `22`, the deterministic plugin packer, and
+the trusted LatticeNet Ed25519 publisher seed. Never commit the seed.
