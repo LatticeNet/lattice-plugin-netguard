@@ -26,7 +26,7 @@ describe("BridgeClient", () => {
     expect(posted.filter((message) => (message as { type?: string }).type === "lattice.plugin.ready")).toHaveLength(2);
     const init = {
       type: "lattice.host.init", nonce: client.nonce, version: "1",
-      pluginId: "latticenet.netguard", pluginVersion: "0.1.0-alpha.6", pluginRoute: "firewall",
+      pluginId: "latticenet.netguard", pluginVersion: "0.1.0-alpha.7", pluginRoute: "firewall",
       locale: "en", colorScheme: "dark", designTokens: {},
       interfaces: [{ service: "latticenet.netguard/firewall", methods: ["overview"] }],
     };

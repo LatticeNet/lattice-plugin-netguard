@@ -2,7 +2,7 @@
 
 Official LatticeNet nftables security-group plugin. This repository owns its
 signed Bundle v2 manifest, Linux runtime, sandbox UI, deterministic packer, and
-tests. Current prerelease: `v0.1.0-alpha.6`.
+tests. Current prerelease: `v0.1.0-alpha.7`.
 
 ## Operator surface
 
