@@ -17,12 +17,13 @@
 package main
 
 import (
-	"bufio"
+	"context"
 	"encoding/json"
 	"fmt"
-	"os"
 	"sort"
 	"strings"
+
+	latticeplugin "github.com/LatticeNet/lattice-sdk/plugin"
 )
 
 const (
@@ -36,35 +37,20 @@ const (
 // declared on the manifest's interfaces rather than here.
 var capabilities = []string{"node:read", "network:plan", "network:apply", "task:run"}
 
-type request struct {
-	Action  string         `json:"action"`
-	Payload map[string]any `json:"payload"`
-}
-
-type response struct {
-	OK      bool            `json:"ok"`
-	Plan    string          `json:"plan,omitempty"`
-	Message string          `json:"message,omitempty"`
-	Result  json.RawMessage `json:"result,omitempty"`
-	Error   string          `json:"error,omitempty"`
-}
+type request = latticeplugin.Request
+type response = latticeplugin.Response
 
 func main() {
-	scanner := bufio.NewScanner(os.Stdin)
-	scanner.Buffer(make([]byte, 0, 64*1024), 1<<20)
-	for scanner.Scan() {
-		var req request
-		if err := json.Unmarshal(scanner.Bytes(), &req); err != nil {
-			write(response{OK: false, Error: "invalid request: " + err.Error()})
-			continue
-		}
-		write(handle(req))
-	}
+	_ = latticeplugin.Serve(context.Background(), latticeplugin.HandlerFunc(
+		func(_ context.Context, req latticeplugin.Request, _ *latticeplugin.HostClient) latticeplugin.Response {
+			return handle(req)
+		},
+	))
 }
 
 func handle(req request) response {
 	switch req.Action {
-	case "describe":
+	case latticeplugin.ActionDescribe:
 		body, _ := json.Marshal(map[string]any{
 			"id":           pluginID,
 			"name":         pluginName,
@@ -84,14 +70,32 @@ func handle(req request) response {
 				"this subprocess never mutates a host",
 			},
 		})
-		return response{OK: true, Result: body, Message: "netguard capability surface"}
-	case "health":
-		return response{OK: true, Message: "netguard plugin healthy"}
-	case "plan":
-		return response{OK: true, Plan: renderPlan(req.Payload), Message: "netguard dry-run plan"}
+		return latticeplugin.RawResultResponse(body, "netguard capability surface")
+	case latticeplugin.ActionHealth:
+		return latticeplugin.MessageResponse("netguard plugin healthy")
+	case latticeplugin.ActionPlan:
+		payload, err := payloadMap(req.Payload)
+		if err != nil {
+			return latticeplugin.ErrorResponse(err)
+		}
+		return latticeplugin.PlanResponse(renderPlan(payload), "netguard dry-run plan")
 	default:
-		return response{OK: false, Error: fmt.Sprintf("unsupported action %q", req.Action)}
+		return latticeplugin.ErrorResponse(fmt.Errorf("unsupported action %q", req.Action))
 	}
+}
+
+func payloadMap(raw json.RawMessage) (map[string]any, error) {
+	if len(raw) == 0 {
+		return map[string]any{}, nil
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return nil, fmt.Errorf("invalid payload: %w", err)
+	}
+	if payload == nil {
+		payload = map[string]any{}
+	}
+	return payload, nil
 }
 
 // renderPlan summarizes, as an auditable dry-run, what a netguard apply would
@@ -114,5 +118,3 @@ func renderPlan(payload map[string]any) string {
 		"# linted for management-path lockout, then applied via plan->approve->apply.")
 	return strings.Join(lines, "\n")
 }
-
-func write(resp response) { _ = json.NewEncoder(os.Stdout).Encode(resp) }
