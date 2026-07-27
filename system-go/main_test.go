@@ -15,6 +15,7 @@ type manifestContract struct {
 	Capabilities []string `json:"capabilities"`
 	Interfaces   []struct {
 		Service string `json:"service"`
+		Backing string `json:"backing"`
 	} `json:"interfaces"`
 }
 
@@ -68,6 +69,9 @@ func TestManifestDeclaresOnlyOwnedInterfaces(t *testing.T) {
 	for _, iface := range manifest.Interfaces {
 		if !strings.HasPrefix(iface.Service, manifest.ID+"/") {
 			t.Fatalf("service %q is not namespaced under %q", iface.Service, manifest.ID)
+		}
+		if iface.Backing != "core" {
+			t.Fatalf("service %q backing = %q, want core", iface.Service, iface.Backing)
 		}
 	}
 	// Global NetGuard plugin scopes fail closed for principals carrying a node
