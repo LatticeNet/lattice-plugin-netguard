@@ -17,7 +17,7 @@ import {
   X,
 } from "@lucide/vue";
 
-import { BridgeClient, canCall, type HostInit } from "./bridge";
+import { BridgeClient, canCall, type HostInit } from "@latticenet/plugin-bridge";
 import {
   buildRemote,
   formatRanges,
@@ -44,7 +44,7 @@ const bootError = ref("");
 
 let bridge: BridgeClient | undefined;
 try {
-  bridge = new BridgeClient(window);
+  bridge = new BridgeClient({ window, expectedPluginId: "latticenet.netguard", expectedRoutes: ["firewall"], idPrefix: "netguard" });
   bridge.init.then(async (value) => {
     init.value = value;
     await refresh();
