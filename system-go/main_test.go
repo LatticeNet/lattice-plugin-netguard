@@ -81,7 +81,7 @@ func TestHealthAndPlan(t *testing.T) {
 	if resp := handle(request{Action: "health"}); !resp.OK {
 		t.Fatalf("health ok = false: %q", resp.Error)
 	}
-	resp := handle(request{Action: "plan", Payload: map[string]any{"node_id": "node-a", "zone": "tailscale"}})
+	resp := handle(request{Action: "plan", Payload: mustJSON(map[string]any{"node_id": "node-a", "zone": "tailscale"})})
 	if !resp.OK {
 		t.Fatalf("plan ok = false: %q", resp.Error)
 	}
@@ -96,12 +96,20 @@ func TestHealthAndPlan(t *testing.T) {
 		}
 	}
 	// Payload keys are rendered in a stable order so a plan hash is stable.
-	first := handle(request{Action: "plan", Payload: map[string]any{"b": 2, "a": 1, "c": 3}}).Plan
+	first := handle(request{Action: "plan", Payload: mustJSON(map[string]any{"b": 2, "a": 1, "c": 3})}).Plan
 	for i := 0; i < 20; i++ {
-		if got := handle(request{Action: "plan", Payload: map[string]any{"c": 3, "a": 1, "b": 2}}).Plan; got != first {
+		if got := handle(request{Action: "plan", Payload: mustJSON(map[string]any{"c": 3, "a": 1, "b": 2})}).Plan; got != first {
 			t.Fatalf("plan rendering is not deterministic:\n%s\n---\n%s", first, got)
 		}
 	}
+}
+
+func mustJSON(value any) json.RawMessage {
+	raw, err := json.Marshal(value)
+	if err != nil {
+		panic(err)
+	}
+	return raw
 }
 
 func TestUnsupportedActionFailsClosed(t *testing.T) {
