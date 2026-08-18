@@ -9,12 +9,12 @@
     "network:apply",
     "task:run"
   ],
-  "version": "0.1.0-alpha.9",
+  "version": "0.1.0-alpha.10",
   "publisher": "latticenet",
-  "signature_ed25519": "fk1cP1vYuXBiGsWBb0zTwuaZrJMgKZrD2F/WMOrszhpGLYmpYi6ScGkAuofZFVEpVMexpEy+075ZI27NIBlIBQ==",
+  "signature_ed25519": "",
   "bundle": {
     "format": "tar+gzip",
-    "digest_sha256": "ac7e1d66b75a911b82f378999c0323c08917fa9d8030046bf790c64eb147b81c"
+    "digest_sha256": "510a272198158017f0b530c5fd97b9fb0e75210dc74be4a9a76ead3d3f2ed488"
   },
   "runtime": {
     "protocol": "stdio-json-v1",
@@ -29,9 +29,9 @@
     "bridge_version": "1"
   },
   "compatibility": {
-    "server": "\u003e=0.2.1",
-    "dashboard_host": "\u003e=1",
-    "runtime_protocol": "\u003e=1"
+    "server": ">=0.2.1",
+    "dashboard_host": ">=1",
+    "runtime_protocol": ">=1"
   },
   "ui": {
     "nav": [
@@ -113,6 +113,20 @@
           "scopes": [
             "netguard:admin",
             "network:plan"
+          ]
+        },
+        {
+          "name": "review",
+          "effect": "read",
+          "scopes": [
+            "netguard:read"
+          ]
+        },
+        {
+          "name": "reality",
+          "effect": "read",
+          "scopes": [
+            "netguard:read"
           ]
         }
       ],

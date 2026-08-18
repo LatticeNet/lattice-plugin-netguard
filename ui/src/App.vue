@@ -9,6 +9,7 @@ import {
   Network,
   Pencil,
   Play,
+  Radar,
   Plus,
   RefreshCw,
   Shield,
@@ -20,22 +21,32 @@ import {
 import { BridgeClient, canCall, type HostInit } from "@latticenet/plugin-bridge";
 import {
   buildRemote,
+  driftTone,
   formatRanges,
+  orderListeners,
   parseRanges,
   remoteValue,
   safeErrorMessage,
+  severityTone,
+  snapshotTone,
+  suggestionsByPort,
   type GuardNode,
   type GuardRule,
+  type GuardSuggestion,
   type GuardZone,
   type NodeBinding,
   type Overview,
+  type RealityDetail,
+  type RealityListResponse,
+  type RealitySummary,
+  type ReviewResponse,
   type SecurityGroup,
 } from "./netguardModel";
 
 const SERVICE = "latticenet.netguard/firewall";
 const init = ref<HostInit>();
 const overview = ref<Overview>({ nodes: [], groups: [], zones: [] });
-const activeTab = ref<"nodes" | "groups" | "zones">("nodes");
+const activeTab = ref<"nodes" | "groups" | "zones" | "reality">("nodes");
 const loading = ref(true);
 const refreshing = ref(false);
 const error = ref("");
@@ -59,6 +70,76 @@ try {
 
 const canAdmin = computed(() => ["upsert_group", "delete_group", "upsert_zone", "delete_zone", "upsert_binding", "adopt"].every((method) => canCall(init.value, SERVICE, method)));
 const canPlan = computed(() => canCall(init.value, SERVICE, "plan"));
+// Reality and review are read methods declared since 0.1.0-alpha.10. A host
+// that predates them simply does not offer the tab, rather than showing one
+// that fails on open.
+const canSeeReality = computed(() => canCall(init.value, SERVICE, "reality") && canCall(init.value, SERVICE, "review"));
+
+// ── reality ────────────────────────────────────────────────────────────────
+//
+// Everything above this line is intent: what the operator declared. This is
+// the other half — what the machines report they actually have — and the two
+// only mean something next to each other.
+const realityRows = ref<RealitySummary[]>([]);
+const realityLoading = ref(false);
+const realityNodeId = ref("");
+const realityDetail = ref<RealityDetail | undefined>();
+const realitySuggestions = ref<GuardSuggestion[]>([]);
+const realityDrift = ref("");
+const realityDetailLoading = ref(false);
+
+const flaggedPorts = computed(() => new Set(suggestionsByPort(realitySuggestions.value).keys()));
+const portSuggestions = computed(() => suggestionsByPort(realitySuggestions.value));
+const listeners = computed(() =>
+  orderListeners(realityDetail.value?.reality?.listeners ?? [], flaggedPorts.value),
+);
+
+async function loadReality(background = false): Promise<void> {
+  if (!canSeeReality.value) return;
+  realityLoading.value = !background;
+  error.value = "";
+  try {
+    const response = await call<RealityListResponse>("reality", {});
+    realityRows.value = response.nodes ?? [];
+    if (!realityNodeId.value && realityRows.value.length) {
+      await openReality(realityRows.value[0]!.node_id);
+    }
+  } catch (cause) {
+    error.value = safeErrorMessage(cause, "Reality snapshots could not be loaded");
+  } finally {
+    realityLoading.value = false;
+    await resize();
+  }
+}
+
+/**
+ * One node's snapshot plus the review that compares it with compiled intent.
+ *
+ * review is allowed to fail on its own: a node with no binding has nothing to
+ * compile, and refusing to show its listeners because of that would hide the
+ * very thing an operator opens this panel for.
+ */
+async function openReality(nodeID: string): Promise<void> {
+  realityNodeId.value = nodeID;
+  realityDetailLoading.value = true;
+  realityDetail.value = undefined;
+  realitySuggestions.value = [];
+  realityDrift.value = "";
+  try {
+    realityDetail.value = (await call<{ node: RealityDetail }>("reality", { node_id: nodeID })).node;
+  } catch (cause) {
+    error.value = safeErrorMessage(cause, "Snapshot could not be loaded");
+  }
+  try {
+    const review = await call<ReviewResponse>("review", { node_id: nodeID });
+    realitySuggestions.value = review.review?.suggestions ?? [];
+    realityDrift.value = review.review?.drift_state ?? "";
+  } catch {
+    realityDrift.value = "unknown";
+  }
+  realityDetailLoading.value = false;
+  await resize();
+}
 const managedNodes = computed(() => overview.value.nodes.filter((node) => node.binding.managed).length);
 const legacyNodes = computed(() => overview.value.nodes.filter((node) => node.source === "legacy").length);
 const ruleCount = computed(() => overview.value.groups.reduce((sum, group) => sum + (group.rules?.length ?? 0), 0));
@@ -76,6 +157,7 @@ async function refresh(background = false): Promise<void> {
   error.value = "";
   try {
     overview.value = await call<Overview>("overview");
+    if (canSeeReality.value) await loadReality(true);
   } catch (cause) {
     error.value = safeErrorMessage(cause, "NetGuard overview could not be loaded");
   } finally {
@@ -274,7 +356,7 @@ onBeforeUnmount(() => { observer?.disconnect(); if (poller) clearInterval(poller
 
     <section class="summary-strip"><div><span>Visible nodes</span><strong>{{ overview.nodes.length }}</strong></div><div><span>Managed</span><strong>{{ managedNodes }}</strong></div><div><span>Security rules</span><strong>{{ ruleCount }}</strong></div><div><span>Custom zones</span><strong>{{ customZones }}</strong></div></section>
 
-    <div class="tabbar" role="tablist" aria-label="NetGuard workspace"><button type="button" :aria-selected="activeTab === 'nodes'" @click="activeTab = 'nodes'"><Network :size="15" />Nodes <span>{{ overview.nodes.length }}</span></button><button type="button" :aria-selected="activeTab === 'groups'" @click="activeTab = 'groups'"><Boxes :size="15" />Security groups <span>{{ overview.groups.length }}</span></button><button type="button" :aria-selected="activeTab === 'zones'" @click="activeTab = 'zones'"><ShieldCheck :size="15" />Trusted zones <span>{{ overview.zones.length }}</span></button></div>
+    <div class="tabbar" role="tablist" aria-label="NetGuard workspace"><button type="button" :aria-selected="activeTab === 'nodes'" @click="activeTab = 'nodes'"><Network :size="15" />Nodes <span>{{ overview.nodes.length }}</span></button><button type="button" :aria-selected="activeTab === 'groups'" @click="activeTab = 'groups'"><Boxes :size="15" />Security groups <span>{{ overview.groups.length }}</span></button><button type="button" :aria-selected="activeTab === 'zones'" @click="activeTab = 'zones'"><ShieldCheck :size="15" />Trusted zones <span>{{ overview.zones.length }}</span></button><button v-if="canSeeReality" type="button" :aria-selected="activeTab === 'reality'" @click="activeTab = 'reality'"><Radar :size="15" />Reality <span>{{ realityRows.length }}</span></button></div>
 
     <div v-if="loading" class="loading-state"><LoaderCircle class="spin" :size="20" />Loading firewall state</div>
 
@@ -289,10 +371,124 @@ onBeforeUnmount(() => { observer?.disconnect(); if (poller) clearInterval(poller
       <div v-if="!overview.groups.length" class="empty-state standalone"><Boxes :size="28" /><strong>No security groups</strong><span>Create a reusable rule set, then attach it to a managed node.</span></div>
     </template>
 
-    <template v-else>
+    <template v-else-if="activeTab === 'zones'">
       <section class="toolbar"><div><h2>Trusted zones</h2><p>Interfaces and CIDRs accepted before security-group evaluation.</p></div><button v-if="canAdmin" class="button primary" type="button" @click="openZone()"><Plus :size="15" />New zone</button></section>
       <section class="zone-grid"><article v-for="zone in overview.zones" :key="zone.id" class="zone-row"><div class="zone-icon"><ShieldCheck :size="17" /></div><div><h3>{{ zone.name }}</h3><p>{{ zone.description || zone.id }}</p></div><div><span>Interfaces</span><strong class="mono">{{ zone.interfaces?.join(', ') || 'resolved per node' }}</strong></div><div><span>CIDRs</span><strong class="mono">{{ zone.cidrs?.join(', ') || 'resolved per node' }}</strong></div><span class="source">{{ zone.builtin ? 'built-in' : 'custom' }}</span><div v-if="canAdmin && !zone.builtin" class="action-row"><button class="icon-button bordered" type="button" aria-label="Edit zone" title="Edit zone" @click="openZone(zone)"><Pencil :size="14" /></button><button class="icon-button bordered destructive" type="button" aria-label="Delete zone" title="Delete zone" @click="deleteTarget = { type: 'zone', id: zone.id, label: zone.name }"><Trash2 :size="14" /></button></div></article></section>
     </template>
+
+    <template v-else-if="activeTab === 'reality'">
+      <section class="toolbar">
+        <div>
+          <h2>What the machines actually have</h2>
+          <p>
+            Every tab above this one is intent. This is the snapshot each node reports of its own
+            firewall, and how far it has drifted from what you declared.
+          </p>
+        </div>
+        <button class="button secondary" type="button" :disabled="realityLoading" @click="loadReality()">
+          <LoaderCircle v-if="realityLoading" class="spin" :size="15" /><RefreshCw v-else :size="15" />Reload snapshots
+        </button>
+      </section>
+
+      <section class="data-panel">
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>Node</th><th>Snapshot</th><th>Collected</th><th>Listeners</th><th>Foreign tables</th><th>Managed table</th></tr>
+            </thead>
+            <tbody>
+              <tr
+                v-for="row in realityRows"
+                :key="row.node_id"
+                class="selectable"
+                :data-selected="row.node_id === realityNodeId"
+                @click="openReality(row.node_id)"
+              >
+                <td><strong>{{ row.node_id }}</strong></td>
+                <td><span class="status" :data-tone="snapshotTone(row.snapshot_status)">{{ row.snapshot_status }}</span></td>
+                <td class="mono">{{ row.collected_at ? new Date(row.collected_at).toLocaleString() : 'never reported' }}</td>
+                <td class="mono">{{ row.listener_count ?? '—' }}</td>
+                <td class="mono">{{ row.foreign_table_count ?? '—' }}</td>
+                <td class="mono">{{ row.managed_sha ? row.managed_sha.slice(0, 12) : 'none' }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div v-if="!realityRows.length && !realityLoading" class="empty-state">
+          <Radar :size="28" />
+          <strong>No snapshots yet</strong>
+          <span>An agent reports its firewall on its next cycle. A node that never reports stays visible here as unknown.</span>
+        </div>
+      </section>
+
+      <section v-if="realityNodeId" class="data-panel">
+        <header class="panel-head">
+          <div>
+            <h3>{{ realityNodeId }}</h3>
+            <p v-if="realityDetail?.reality">
+              nft {{ realityDetail.reality.nft_version || 'version unknown' }} ·
+              collected {{ new Date(realityDetail.reality.collected_at).toLocaleString() }}
+            </p>
+            <p v-else>This node has not reported a snapshot.</p>
+          </div>
+          <span class="status" :data-tone="driftTone(realityDrift)">
+            {{ realityDrift === 'in_sync' ? 'in sync' : realityDrift === 'drift_detected' ? 'drift detected' : 'drift unknown' }}
+          </span>
+        </header>
+
+        <div v-if="realityDetailLoading" class="loading-state"><LoaderCircle class="spin" :size="18" />Reading the node</div>
+
+        <template v-else-if="realityDetail?.reality">
+          <p v-if="realityDrift === 'unknown'" class="advisory-inline">
+            Nothing to compare: either this node has never applied a plan, or its snapshot predates
+            one. Unknown is not the same as in sync.
+          </p>
+
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Port</th><th>Protocol</th><th>Address</th><th>Process</th><th>Assessment</th></tr></thead>
+              <tbody>
+                <tr v-for="entry in listeners" :key="`${entry.protocol}-${entry.address}-${entry.port}`">
+                  <td class="mono"><strong>{{ entry.port ?? '—' }}</strong></td>
+                  <td class="mono">{{ entry.protocol || '—' }}</td>
+                  <td class="mono">{{ entry.address || '—' }}</td>
+                  <td>{{ entry.process || 'unknown' }}</td>
+                  <td>
+                    <template v-if="portSuggestions.get(entry.port ?? -1)">
+                      <span
+                        v-for="suggestion in portSuggestions.get(entry.port ?? -1)"
+                        :key="suggestion.id"
+                        class="status"
+                        :data-tone="severityTone(suggestion.severity)"
+                        :title="suggestion.detail"
+                      >{{ suggestion.title }}</span>
+                    </template>
+                    <span v-else class="muted-inline">covered by policy</span>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p v-if="!listeners.length" class="empty-inline">The node reports no listening sockets.</p>
+
+          <div v-if="realityDetail.reality.foreign_tables?.length" class="advisory-inline warn">
+            <strong>Foreign nftables tables:</strong>
+            <span class="mono">{{ realityDetail.reality.foreign_tables.join(', ') }}</span>
+            — these are not managed by NetGuard and their rules still apply to this machine.
+          </div>
+
+          <div v-if="realitySuggestions.length" class="rule-list">
+            <div v-for="suggestion in realitySuggestions" :key="suggestion.id" class="rule-row">
+              <span class="status" :data-tone="severityTone(suggestion.severity)">{{ suggestion.severity }}</span>
+              <strong>{{ suggestion.title }}</strong>
+              <span>{{ suggestion.detail }}</span>
+              <small class="mono">{{ suggestion.code }}</small>
+            </div>
+          </div>
+        </template>
+      </section>
+    </template>
+
 
     <div v-if="groupDialogOpen" class="modal-backdrop" @mousedown.self="groupDialogOpen = false"><section class="modal wide" role="dialog" aria-modal="true"><header><div><h2>{{ groupForm.version ? 'Edit security group' : 'New security group' }}</h2><p>Rules are evaluated in order after trusted zones and node overrides.</p></div><button class="icon-button" type="button" aria-label="Close" @click="groupDialogOpen = false"><X :size="17" /></button></header><div class="form-grid"><label class="field"><span>Group ID</span><input v-model="groupForm.id" type="text" :disabled="groupForm.version > 0" placeholder="sg-web" /></label><label class="field"><span>Name</span><input v-model="groupForm.name" type="text" /></label><label class="field wide-field"><span>Description</span><input v-model="groupForm.description" type="text" /></label></div><div class="rule-editor"><header><div><h3>Ordered rules</h3><p>Empty ports means all ports for the selected protocol.</p></div><button class="button secondary compact" type="button" @click="groupForm.rules.push(blankRule())"><Plus :size="14" />Add rule</button></header><div v-for="(rule, index) in groupForm.rules" :key="rule.id" class="rule-edit-row"><span class="order">{{ index + 1 }}</span><label><span>Action</span><select v-model="rule.action"><option value="allow">Allow</option><option value="deny">Deny</option></select></label><label><span>Direction</span><select v-model="rule.direction"><option value="ingress">Ingress</option><option value="egress">Egress</option></select></label><label><span>Protocol</span><select v-model="rule.protocol"><option v-for="protocol in ['tcp','udp','icmp','icmpv6','any']" :key="protocol" :value="protocol">{{ protocol }}</option></select></label><label><span>Ports</span><input v-model="rule.portsText" type="text" placeholder="22, 443, 9009-9013" /></label><label><span>Remote</span><select v-model="rule.remote.kind"><option v-for="kind in ['any','zone','cidr','node','group','domain']" :key="kind" :value="kind">{{ kind }}</option></select></label><label><span>Remote value</span><input v-model="rule.remoteValue" type="text" :disabled="rule.remote.kind === 'any'" /></label><label class="comment"><span>Comment</span><input v-model="rule.comment" type="text" /></label><label class="check"><input v-model="rule.disabled" type="checkbox" /><span>Disabled</span></label><button class="icon-button destructive" type="button" aria-label="Remove rule" title="Remove rule" @click="groupForm.rules.splice(index, 1)"><Trash2 :size="14" /></button></div></div><footer><button class="button secondary" type="button" @click="groupDialogOpen = false">Cancel</button><button class="button primary" type="button" :disabled="groupSaving || !groupForm.name.trim()" @click="saveGroup"><LoaderCircle v-if="groupSaving" class="spin" :size="15" />Save group</button></footer></section></div>
 
