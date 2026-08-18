@@ -20,3 +20,71 @@ h1, h2, h3, p { margin: 0; } h1 { font-size: 20px; font-weight: 660; } h2 { font
 .plan-warning, .risk-toggle { display: flex; align-items: flex-start; gap: 9px; margin: 17px; padding: 12px; border: 1px solid #dfc27c; border-radius: 6px; color: #805b08; background: #fffaeb; font-size: 11px; }.plan-warning p { margin-top: 4px; line-height: 1.5; }.risk-toggle { color: var(--foreground, #17191c); border-color: var(--border, #d9dde2); background: var(--muted, #eef0f2); }.plan-review pre { max-height: 470px; overflow: auto; margin: 0; padding: 16px; color: #d8dee9; background: #16191d; font: 11px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre; }.findings { padding: 12px 16px; }.findings > div { margin-bottom: 7px; padding: 9px 10px; border-left: 3px solid #d39a22; background: #fffaeb; font-size: 10px; }.findings > div[data-tone="block"] { border-color: var(--destructive, #b52b2b); background: #fff3f2; }.findings p { margin-top: 3px; line-height: 1.45; }.confirm-copy { padding: 4px 17px 0; font-size: 13px; }.spin { animation: spin .8s linear infinite; } @keyframes spin { to { transform: rotate(360deg); } } @media (prefers-reduced-motion: reduce) { .spin { animation: none; } }
 @media (max-width: 980px) { .object-grid { grid-template-columns: 1fr; }.zone-row { grid-template-columns: auto minmax(0, 1fr) auto auto; }.zone-row > div:nth-child(3), .zone-row > div:nth-child(4) { grid-column: 2 / -1; }.rule-edit-row { grid-template-columns: 24px repeat(3, minmax(90px, 1fr)); }.rule-edit-row .comment { grid-column: 2 / span 2; }.rule-edit-row .check { grid-column: 4; } }
 @media (max-width: 760px) { .workspace { padding-top: 18px; }.page-header { grid-template-columns: auto minmax(0, 1fr); }.page-header > .button { grid-column: 1 / -1; width: 100%; }.summary-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }.summary-strip > div:nth-child(2) { border-right: 0; }.summary-strip > div:nth-child(-n+2) { border-bottom: 1px solid var(--border, #d9dde2); }.tabbar { overflow-x: auto; }.toolbar { align-items: flex-start; flex-direction: column; }.toolbar .button { width: 100%; }.zone-row { grid-template-columns: auto minmax(0, 1fr) auto; }.zone-row .source { grid-column: 2; }.binding-editor, .form-grid { grid-template-columns: 1fr; }.wide-field, .managed-toggle { grid-column: auto; } }
+
+/* ── reality panel ────────────────────────────────────────────────────────
+   Everything here is read-only evidence from a node, so it stays quiet: the
+   only colour is semantic (drift, severity, snapshot freshness). */
+
+.selectable {
+  cursor: pointer;
+}
+
+.selectable:hover {
+  background: color-mix(in srgb, var(--foreground, #e6e9ef) 6%, transparent);
+}
+
+.selectable[data-selected="true"] {
+  background: color-mix(in srgb, var(--primary, #29d3a6) 12%, transparent);
+}
+
+.panel-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border, #262b33);
+}
+
+.panel-head h3 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.panel-head p {
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: var(--muted-foreground, #98a2b3);
+}
+
+.advisory-inline {
+  margin: 10px 14px 0;
+  padding: 8px 10px;
+  border-left: 2px solid var(--muted-foreground, #98a2b3);
+  background: color-mix(in srgb, var(--foreground, #e6e9ef) 4%, transparent);
+  font-size: 12px;
+  color: var(--muted-foreground, #98a2b3);
+}
+
+.advisory-inline.warn {
+  border-left-color: var(--warning, #d9a441);
+  color: var(--foreground, #e6e9ef);
+}
+
+.muted-inline {
+  font-size: 12px;
+  color: var(--muted-foreground, #98a2b3);
+}
+
+/* Tones used by the reality panel. The older healthy/warning pair stays for
+   the tabs that already speak it; these four are the vocabulary the drift and
+   severity helpers return, and they are token-based rather than hardcoded so
+   the panel survives a theme. */
+.status[data-tone="ok"] { color: var(--success, #147a4b); }
+.status[data-tone="ok"]::before { background: var(--success, #20a464); }
+.status[data-tone="warn"] { color: var(--warning, #95650a); }
+.status[data-tone="warn"]::before { background: var(--warning, #d39a22); }
+.status[data-tone="danger"] { color: var(--destructive, #b52b2b); }
+.status[data-tone="danger"]::before { background: var(--destructive, #b52b2b); }
+.status[data-tone="muted"] { color: var(--muted-foreground, #65707b); }
+.status[data-tone="muted"]::before { background: var(--muted-foreground, #8a949e); }
