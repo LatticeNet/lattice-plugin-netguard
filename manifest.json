@@ -11,7 +11,7 @@
   ],
   "version": "0.1.0-alpha.10",
   "publisher": "latticenet",
-  "signature_ed25519": "",
+  "signature_ed25519": "QHVfEgNeEyTEM0TodLnc7Rjb0RD0ZtnRFV6v7UOBqXdmAH4TJOxjCPdLZS6nCobmwL/R8/xiaDIna9xm/addAg==",
   "bundle": {
     "format": "tar+gzip",
     "digest_sha256": "510a272198158017f0b530c5fd97b9fb0e75210dc74be4a9a76ead3d3f2ed488"
@@ -29,9 +29,9 @@
     "bridge_version": "1"
   },
   "compatibility": {
-    "server": ">=0.2.1",
-    "dashboard_host": ">=1",
-    "runtime_protocol": ">=1"
+    "server": "\u003e=0.2.1",
+    "dashboard_host": "\u003e=1",
+    "runtime_protocol": "\u003e=1"
   },
   "ui": {
     "nav": [
