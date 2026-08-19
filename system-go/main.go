@@ -29,7 +29,7 @@ import (
 const (
 	pluginID      = "latticenet.netguard"
 	pluginName    = "NetGuard (nftables security groups)"
-	pluginVersion = "0.1.0-alpha.10"
+	pluginVersion = "0.1.0-alpha.14"
 )
 
 // capabilities mirrors the manifest. netguard:read/netguard:admin are core RBAC
