@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   attentionRank,
+  definiteTime,
   countPosture,
   coverageLabel,
   driftToneFor,
@@ -219,5 +220,31 @@ describe("honest unknowns", () => {
   it("ranks a clean node at zero attention", () => {
     const clean = joinPosture([intent("a")], [summary("a")])[0]!;
     expect(attentionRank(clean)).toBe(0);
+  });
+});
+
+describe("definiteTime", () => {
+  it("treats Go's unset time.Time as absent", () => {
+    // Go marshals an unset time as this rather than omitting the field, and it
+    // parses fine, so it reached the UI as an age of roughly 735846 days.
+    expect(definiteTime("0001-01-01T00:00:00Z")).toBeUndefined();
+  });
+
+  it("treats a missing, empty or unparseable value as absent", () => {
+    expect(definiteTime(undefined)).toBeUndefined();
+    expect(definiteTime("")).toBeUndefined();
+    expect(definiteTime("not a date")).toBeUndefined();
+  });
+
+  it("keeps a real timestamp", () => {
+    expect(definiteTime("2026-08-19T08:36:18Z")).toBe("2026-08-19T08:36:18Z");
+  });
+
+  it("does not report an apply for a node that was never applied to", () => {
+    const [row] = joinPosture(
+      [{ node_id: "n1", node_name: "n1", binding: { last_applied_at: "0001-01-01T00:00:00Z" } } as never],
+      [],
+    );
+    expect(row.lastAppliedAt).toBeUndefined();
   });
 });

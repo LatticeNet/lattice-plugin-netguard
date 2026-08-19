@@ -79,6 +79,22 @@ export type SortKey =
 
 export type SortDirection = "asc" | "desc";
 
+/**
+ * A timestamp the server never actually set, normalized to absent.
+ *
+ * Go marshals an unset time.Time as "0001-01-01T00:00:00Z" rather than
+ * omitting it, and that parses perfectly well. Rendered as an age it becomes
+ * "735846 d ago", which is how a node Lattice has never applied anything to
+ * ended up claiming an apply two millennia ago. Anything at or before the Unix
+ * epoch is treated as never set, which also covers a plain "0".
+ */
+export function definiteTime(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  const parsed = Date.parse(value);
+  if (Number.isNaN(parsed) || parsed <= 0) return undefined;
+  return value;
+}
+
 function normalizeSnapshot(value: string | undefined): SnapshotStatus {
   return value === "fresh" || value === "stale" ? value : "unknown";
 }
@@ -130,8 +146,8 @@ export function joinPosture(
       foreignTableCount: row.foreign_table_count,
       managedSha: row.managed_sha,
       appliedTableSha: row.applied_table_sha || intent?.binding?.applied_table_sha,
-      collectedAt: row.collected_at,
-      lastAppliedAt: row.last_applied_at || intent?.binding?.last_applied_at,
+      collectedAt: definiteTime(row.collected_at),
+      lastAppliedAt: definiteTime(row.last_applied_at) ?? definiteTime(intent?.binding?.last_applied_at),
       lastError: row.last_error || intent?.binding?.last_error,
       groupIds: intent?.binding?.group_ids ?? [],
       zoneIds: intent?.binding?.zone_ids ?? [],
@@ -149,7 +165,7 @@ export function joinPosture(
       driftState: "unknown",
       source: node.source,
       appliedTableSha: node.binding?.applied_table_sha,
-      lastAppliedAt: node.binding?.last_applied_at,
+      lastAppliedAt: definiteTime(node.binding?.last_applied_at),
       lastError: node.binding?.last_error,
       groupIds: node.binding?.group_ids ?? [],
       zoneIds: node.binding?.zone_ids ?? [],
