@@ -172,8 +172,8 @@ function absolute(value: string | undefined): string {
 
     <div v-if="empty" class="empty">
       <Radar :size="26" />
-      <strong>No nodes match this filter</strong>
-      <span>Clear the filter or the search to see the whole fleet.</span>
+      <strong>No nodes in this view</strong>
+      <span>Clear the search or the posture filter above. If neither is set, this session can see no nodes at all.</span>
     </div>
   </section>
 </template>

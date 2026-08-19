@@ -86,7 +86,9 @@ function submit(): void {
     <div class="binding-grid">
       <fieldset>
         <legend>Security groups</legend>
-        <p v-if="!groups.length" class="subtle">No groups exist yet.</p>
+        <p v-if="!groups.length" class="subtle">
+          No security groups exist yet. Create one on the Security groups tab, then attach it here.
+        </p>
         <label v-for="group in groups" :key="group.id" class="check">
           <input
             type="checkbox"
@@ -101,6 +103,9 @@ function submit(): void {
       </fieldset>
       <fieldset>
         <legend>Trusted zones</legend>
+        <p v-if="!zones.length" class="subtle">
+          No zones exist yet. Create one on the Trusted zones tab to keep a management path open.
+        </p>
         <label v-for="zone in zones" :key="zone.id" class="check">
           <input
             type="checkbox"
