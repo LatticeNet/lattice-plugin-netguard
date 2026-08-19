@@ -100,11 +100,17 @@ try {
       await refresh();
     })
     .catch((cause) => {
-      bootError.value = safeErrorMessage(cause, "Plugin host unavailable");
+      bootError.value = safeErrorMessage(
+        cause,
+        "The Lattice console did not hand this page a session, so NetGuard has nothing to show.",
+      );
       loading.value = false;
     });
 } catch (cause) {
-  bootError.value = safeErrorMessage(cause, "Plugin host unavailable");
+  bootError.value = safeErrorMessage(
+    cause,
+    "The Lattice console did not hand this page a session, so NetGuard has nothing to show.",
+  );
   loading.value = false;
 }
 
@@ -120,7 +126,7 @@ const canSeeReality = computed(
 
 async function call<T>(method: string, payload: unknown = {}): Promise<T> {
   if (!bridge || !canCall(init.value, SERVICE, method)) {
-    throw new Error(`Method ${method} is not available for this session`);
+    throw new Error(`This session cannot run ${method} on NetGuard, so nothing was sent to any node.`);
   }
   // toWire, not the payload as given: these payloads are assembled from
   // reactive forms, and postMessage cannot structured-clone a Vue proxy.
@@ -410,13 +416,17 @@ async function confirmApply(acceptLockoutRisk: boolean): Promise<void> {
       node_id: selectedRow.value.nodeId,
       accept_lockout_risk: acceptLockoutRisk,
     });
-    notice.value = `Approval ${result.approval?.id ?? ""} created for ${selectedRow.value.nodeName}. It applies once approved.`;
+    const approvalId = result.approval?.id ?? "";
+    notice.value = `Approval created for ${selectedRow.value.nodeName}${approvalId ? ` (${approvalId})` : ""}. The node keeps its current rules until someone approves it.`;
     applyDialog.value = false;
     await refresh(true);
     await reloadReview();
     rulesetBaseline.value = review.value?.ruleset ?? rulesetBaseline.value;
   } catch (cause) {
-    planError.value = safeErrorMessage(cause, "The plan was refused or could not be created");
+    planError.value = safeErrorMessage(
+      cause,
+      "NetGuard did not create the plan. Nothing has changed on this node.",
+    );
   } finally {
     planning.value = false;
   }
@@ -628,7 +638,7 @@ function ruleSummary(rule: GuardRule): string {
         </button>
       </div>
 
-      <section class="panel">
+      <section v-if="overview.zones.length" class="panel">
         <div class="table-scroll">
           <table>
             <thead>
@@ -640,8 +650,8 @@ function ruleSummary(rule: GuardRule): string {
                   <strong>{{ zone.name }}</strong>
                   <small>{{ zone.description || zone.id }}</small>
                 </td>
-                <td class="mono">{{ zone.interfaces?.join(', ') || 'resolved per node' }}</td>
-                <td class="mono">{{ zone.cidrs?.join(', ') || 'resolved per node' }}</td>
+                <td class="mono">{{ zone.interfaces?.join(', ') || (zone.builtin ? 'resolved per node' : 'none set') }}</td>
+                <td class="mono">{{ zone.cidrs?.join(', ') || (zone.builtin ? 'resolved per node' : 'none set') }}</td>
                 <td>{{ zone.builtin ? 'built in' : 'custom' }}</td>
                 <td class="numeric">
                   <div v-if="canAdmin && !zone.builtin" class="actions">
@@ -664,6 +674,14 @@ function ruleSummary(rule: GuardRule): string {
           </table>
         </div>
       </section>
+      <div v-else class="empty panel">
+        <ShieldCheck :size="26" />
+        <strong>No trusted zones</strong>
+        <span>
+          A zone names the interfaces and CIDRs a node accepts before any security group runs. Create
+          one to keep a management path open, then attach it in a node's binding.
+        </span>
+      </div>
     </template>
 
     <GroupEditor
