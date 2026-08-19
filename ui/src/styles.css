@@ -493,9 +493,21 @@ h3 {
   overflow: hidden;
 }
 
+/* The fade at the edges is the only cue that a wide table continues past the
+   frame. Without it a column scrolled out of view reads as a column with
+   nothing in it, which for the drift column is the worst possible misreading.
+   background-attachment local/scroll is what makes the shadows appear only on
+   the side that still has content. */
 .table-scroll {
   width: 100%;
   overflow-x: auto;
+  background:
+    linear-gradient(to right, var(--ng-card) 30%, transparent) left center / 32px 100% no-repeat local,
+    linear-gradient(to left, var(--ng-card) 30%, transparent) right center / 32px 100% no-repeat local,
+    radial-gradient(farthest-side at 0 50%, color-mix(in srgb, var(--ng-fg) 20%, transparent), transparent)
+      left center / 14px 100% no-repeat scroll,
+    radial-gradient(farthest-side at 100% 50%, color-mix(in srgb, var(--ng-fg) 20%, transparent), transparent)
+      right center / 14px 100% no-repeat scroll;
 }
 
 table {
@@ -941,13 +953,35 @@ td small {
   flex-direction: column;
 }
 
+/* Flex, not grid with auto-fit. auto-fit derives its track count from the
+   available width, not from the number of items, so the ten cells in a rule row
+   overflowed into implicit rows: the "Disabled" label was crushed into the
+   28px trailing track and read as "Di", and the remove button landed under the
+   row index instead of at the end of the row. Wrapping flex gives each field a
+   floor it cannot be squeezed below and keeps remove last at every width. */
 .rule-edit {
-  display: grid;
-  grid-template-columns: 22px repeat(auto-fit, minmax(110px, 1fr)) 28px;
-  align-items: end;
-  gap: 7px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 8px;
   padding: 10px 12px;
   border-bottom: 1px solid color-mix(in srgb, var(--ng-border) 60%, transparent);
+}
+
+.rule-edit .field {
+  flex: 1 1 122px;
+  min-width: 0;
+}
+
+.rule-edit .field.check {
+  flex: 0 0 auto;
+  align-items: center;
+  white-space: nowrap;
+}
+
+.rule-edit .icon-button {
+  flex: 0 0 auto;
+  margin-left: auto;
 }
 
 .rule-edit:last-child {
@@ -955,6 +989,7 @@ td small {
 }
 
 .rule-index {
+  flex: 0 0 20px;
   align-self: center;
   color: var(--ng-muted);
   font-size: 10.5px;
@@ -1018,7 +1053,19 @@ td small {
   }
 }
 
+/* Above this width the node cell shows only the node; below it the drift state
+   is repeated there, because horizontal scroll must never be the only way to
+   learn that a machine is enforcing rules nobody wrote. */
+.row-drift {
+  display: none;
+}
+
 @media (max-width: 720px) {
+  .row-drift {
+    display: block;
+    margin-top: 4px;
+  }
+
   .masthead {
     grid-template-columns: auto minmax(0, 1fr);
   }

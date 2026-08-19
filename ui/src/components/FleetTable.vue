@@ -109,6 +109,15 @@ function absolute(value: string | undefined): string {
             <td>
               <strong>{{ row.nodeName }}</strong>
               <small class="mono">{{ row.nodeId }}</small>
+              <!-- Repeated from the drift column, shown only when that column
+                   has been pushed off the side by a narrow frame. -->
+              <span class="row-drift">
+                <StatusPill
+                  :tone="driftToneFor(row.driftState)"
+                  :label="driftLabel(row.driftState)"
+                  :title="row.driftState === 'unknown' ? driftUnknownReason(row) : undefined"
+                />
+              </span>
             </td>
             <td>
               <StatusPill :tone="coverageTone(row.coverage)" :label="coverageLabel(row.coverage)" />
