@@ -91,15 +91,39 @@ export function buildRemote(kind: string, value: string): Remote {
 
 export function safeErrorMessage(value: unknown, fallback = "Request failed"): string {
   if (value instanceof Error && value.message.trim()) return value.message;
+  // A DOMException is not an instanceof Error in Chrome, and postMessage throws
+  // one. Without this branch a structured-clone failure surfaced as the generic
+  // fallback, which is how a broken write path looked like a server refusal.
+  if (typeof value === "object" && value !== null && "message" in value) {
+    const message = String((value as { message: unknown }).message).trim();
+    if (message) return message;
+  }
   if (typeof value === "string" && value.trim()) return value;
   return fallback;
+}
+
+/**
+ * Strip anything that cannot cross the bridge.
+ *
+ * The host is reached through postMessage, which structured-clones its
+ * argument, and a Vue reactive proxy is not cloneable: passing one throws a
+ * DataCloneError before the call is ever sent. Every payload assembled from a
+ * reactive form hits this, so the conversion belongs here at the boundary
+ * rather than at each call site where the next one added would forget it.
+ *
+ * A JSON round trip is the right conversion and not a lazy one: the wire is
+ * JSON, so anything it would drop could not have been transmitted anyway.
+ */
+export function toWire<T>(value: T): T {
+  if (value === undefined || value === null) return value;
+  return JSON.parse(JSON.stringify(value)) as T;
 }
 
 // ── reality / review (server D3a) ────────────────────────────────────────────
 //
 // A NetGuard binding says what a node's firewall SHOULD be. A reality snapshot
 // is what the node reports it actually has. Until these two were reachable
-// from the plugin, the UI could only ever show intent — an operator could read
+// from the plugin, the UI could only ever show intent. An operator could read
 // their own rules back and learn nothing about whether the machine agrees.
 
 export interface GuardListener {
@@ -126,17 +150,39 @@ export interface GuardNodeReality {
   collected_at: string;
 }
 
-/** One row of the fleet-wide list: enough to tell which node to open. */
+/**
+ * One row of the fleet-wide list.
+ *
+ * This carries drift and binding state as well as freshness, so a fleet-wide
+ * posture view is one request rather than one request per node. Everything
+ * optional is genuinely absent for a node that has never reported: a missing
+ * count is not zero, and rendering it as zero would claim the node has no
+ * listeners when the truth is that nobody has looked.
+ */
 export interface RealitySummary {
   node_id: string;
+  node_name?: string;
   snapshot_status: string;
+  drift_state?: string;
+  managed?: boolean;
+  has_binding?: boolean;
   collected_at?: string;
   received_at?: string;
   stale_after?: string;
   managed_sha?: string;
+  applied_table_sha?: string;
+  last_applied_at?: string;
+  last_error?: string;
   listener_count?: number;
   interface_count?: number;
   foreign_table_count?: number;
+}
+
+/** One lint result from the plan or review path. */
+export interface LintFinding {
+  code: string;
+  severity: string;
+  message: string;
 }
 
 export interface RealityListResponse {
@@ -166,27 +212,38 @@ export interface GuardSuggestion {
   process?: string;
 }
 
+export interface Review {
+  node: GuardNode;
+  reality: RealityDetail;
+  suggestions: GuardSuggestion[];
+  drift_state: string;
+  replan_input?: { node_id: string };
+  /** What Lint says about the plan this node's intent compiles to right now. */
+  findings?: LintFinding[];
+  /** The nft text this intent renders to. Empty when compile_error is set. */
+  ruleset?: string;
+  /** Why ruleset is empty. Reality is still rendered when this is set. */
+  compile_error?: string;
+}
+
 export interface ReviewResponse {
-  review: {
-    node: unknown;
-    reality: RealityDetail;
-    suggestions: GuardSuggestion[];
-    drift_state: string;
-    replan_input?: { node_id: string };
-  };
+  review: Review;
 }
 
 /**
  * How a node's drift reads to a person.
  *
  * "unknown" is the honest answer whenever either side of the comparison is
- * missing — a node that has never reported, or a binding that has never been
+ * missing: a node that has never reported, or a binding that has never been
  * applied. Calling that "in sync" would be the most dangerous label in the
  * panel: it is exactly the state where nobody knows.
  */
 export function driftTone(state: string): "ok" | "warn" | "danger" | "muted" {
   if (state === "in_sync") return "ok";
-  if (state === "drift_detected") return "danger";
+  // The server's constant is "drift". This read "drift_detected" and so fell
+  // through to the neutral fallback: the one state that must shout was the one
+  // rendered quietly.
+  if (state === "drift") return "danger";
   if (state === "unknown") return "muted";
   return "warn";
 }
