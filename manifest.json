@@ -11,10 +11,10 @@
   ],
   "version": "0.1.0-alpha.14",
   "publisher": "latticenet",
-  "signature_ed25519": "",
+  "signature_ed25519": "ugYCEcTwkbUlXdPPmlu6uY6PAw5Io1uEiXBjaVPeiIgXi9h313ynFedle0F2s/MjwXslaSIINJv+1hj/N4PmCQ==",
   "bundle": {
     "format": "tar+gzip",
-    "digest_sha256": "ba9a7d7f803ba851bc94c3619631cf7258e590a99ae0789a1c02ad97ea8b5ac9"
+    "digest_sha256": "35031d5c6157aca238887aa323651fc69a6bf119ee94c06b6fcde7ed3ef14b6c"
   },
   "runtime": {
     "protocol": "stdio-json-v1",
