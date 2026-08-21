@@ -13,8 +13,10 @@
  * panel opens next to the action that summoned it, which is where the eye
  * already is.
  */
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { X } from "@lucide/vue";
+
+import { clampAnchorTop } from "../anchor";
 
 const props = withDefaults(
   defineProps<{
@@ -34,11 +36,20 @@ const emit = defineEmits<{ (event: "close"): void }>();
 const panel = ref<HTMLElement>();
 
 /**
- * Keep the panel inside the document. An anchor near the bottom would otherwise
- * push the panel past the frame's height, and the host would either clip it or
- * grow the frame around empty space.
+ * Keep the panel inside the document. An anchor near the bottom of a long fleet
+ * would otherwise push a tall dialog past the frame's height, and the host would
+ * either clip it or grow the frame around empty space. The clamp needs the
+ * panel's real height, so it runs once the panel exists rather than being
+ * derived from the anchor alone.
  */
-const top = computed(() => Math.max(16, props.anchorTop ?? 0));
+const top = ref(0);
+
+async function place(): Promise<void> {
+  top.value = clampAnchorTop(props.anchorTop ?? 0);
+  await nextTick();
+  const height = panel.value?.getBoundingClientRect().height ?? 0;
+  top.value = clampAnchorTop(props.anchorTop ?? 0, height);
+}
 
 function onKeydown(event: KeyboardEvent): void {
   if (event.key === "Escape" && props.open && !props.busy) emit("close");
@@ -51,10 +62,14 @@ watch(
   () => props.open,
   async (isOpen) => {
     if (!isOpen) return;
-    await nextTick();
+    await place();
     panel.value?.focus();
   },
 );
+
+// A dialog whose body grows after opening (a diff loading in, an error notice
+// appearing) has to be re-placed, or it can end up hanging off the document.
+watch(() => props.anchorTop, () => void place());
 </script>
 
 <template>

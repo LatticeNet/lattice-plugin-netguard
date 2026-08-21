@@ -38,7 +38,7 @@ import GroupEditor from "./components/GroupEditor.vue";
 import NodeDetail from "./components/NodeDetail.vue";
 import PostureBar from "./components/PostureBar.vue";
 import ZoneEditor from "./components/ZoneEditor.vue";
-import { measureAnchor } from "./anchor";
+import { anchorTopFrom } from "./anchor";
 import {
   countPosture,
   joinPosture,
@@ -273,7 +273,7 @@ const groupSaving = ref(false);
 const groupError = ref("");
 
 function openGroup(event: Event, group?: SecurityGroup): void {
-  anchorTop.value = measureAnchor(event);
+  anchorTop.value = anchorTopFrom(event);
   editingGroup.value = group;
   groupError.value = "";
   groupDialog.value = true;
@@ -301,7 +301,7 @@ const zoneSaving = ref(false);
 const zoneError = ref("");
 
 function openZone(event: Event, zone?: GuardZone): void {
-  anchorTop.value = measureAnchor(event);
+  anchorTop.value = anchorTopFrom(event);
   editingZone.value = zone;
   zoneError.value = "";
   zoneDialog.value = true;
@@ -328,7 +328,7 @@ const bindingSaving = ref(false);
 const bindingError = ref("");
 
 function openBinding(event: Event): void {
-  anchorTop.value = measureAnchor(event);
+  anchorTop.value = anchorTopFrom(event);
   bindingError.value = "";
   bindingDialog.value = true;
 }
@@ -368,7 +368,7 @@ const deleteError = ref("");
 const deleting = ref(false);
 
 function askDelete(event: Event, type: "group" | "zone", id: string, label: string): void {
-  anchorTop.value = measureAnchor(event);
+  anchorTop.value = anchorTopFrom(event);
   deleteError.value = "";
   deleteTarget.value = { type, id, label };
 }
@@ -402,7 +402,7 @@ const planning = ref(false);
 const planError = ref("");
 
 function openApply(event: Event): void {
-  anchorTop.value = measureAnchor(event);
+  anchorTop.value = anchorTopFrom(event);
   planError.value = "";
   applyDialog.value = true;
 }
