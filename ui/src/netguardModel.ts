@@ -102,6 +102,13 @@ export function safeErrorMessage(value: unknown, fallback = "Request failed"): s
   return fallback;
 }
 
+/** A message as a sentence, so two of them can follow each other. */
+export function endSentence(value: string): string {
+  const clean = value.trim();
+  if (!clean) return "";
+  return /[.!?]$/.test(clean) ? clean : `${clean}.`;
+}
+
 /**
  * Strip anything that cannot cross the bridge.
  *

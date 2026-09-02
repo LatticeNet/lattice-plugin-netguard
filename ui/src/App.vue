@@ -55,6 +55,7 @@ import {
 } from "./exposure";
 import { countPosture, joinPosture, type PostureRow } from "./posture";
 import {
+  endSentence,
   safeErrorMessage,
   toWire,
   type GuardNodeReality,
@@ -68,6 +69,7 @@ import {
   type ReviewResponse,
   type SecurityGroup,
 } from "./netguardModel";
+import { scrollToElement } from "./scrollTo";
 import { ageLabel, clockUtc, stampUtc } from "./time";
 
 const SERVICE = "latticenet.netguard/firewall";
@@ -253,8 +255,8 @@ async function refresh(background = false): Promise<void> {
   if (epoch !== refreshEpoch) return;
   // Partial failure is reported as partial, never rounded up to a working
   // panel: half this surface is intent and half is evidence, and a fleet
-  // rendered from one of them alone is misleading.
-  error.value = failures.join(" ");
+  // rendered from one of them alone is misleading. One failure per line.
+  error.value = failures.map(endSentence).join("\n");
   observedAt.value = Date.now();
   loading.value = false;
   refreshing.value = false;
@@ -345,15 +347,19 @@ const readingSnapshots = computed(
 
 // ── findings ────────────────────────────────────────────────────────────────
 
-/** Session-local dismissals. Deliberately not persisted; the button's title says so. */
+/**
+ * Session-local dismissals. Deliberately not persisted, reversible from the
+ * row, and never subtracted from the count: an ignored finding is still an
+ * open port, so the badge and the subtitle keep counting it and say how many
+ * are ignored beside it.
+ */
 const ignored = ref(new Set<string>());
 const expandedFindings = ref(new Set<string>());
 
 const findings = computed<Finding[]>(() =>
   matchedViews.value
     .filter((view) => view.detail === "loaded" && view.exposure.evidence === "fresh")
-    .flatMap((view) => findingsFor(view.row, view.exposure, exposureContext.value))
-    .filter((finding) => !ignored.value.has(finding.key)),
+    .flatMap((view) => findingsFor(view.row, view.exposure, exposureContext.value)),
 );
 
 function toggleFinding(key: string): void {
@@ -370,14 +376,21 @@ async function focusFinding(key: string): Promise<void> {
   ignored.value.delete(key);
   if (!expandedFindings.value.has(key)) toggleFinding(key);
   await nextTick();
-  const reduced = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
-  document.getElementById(`finding-${key}`)?.scrollIntoView({ block: "nearest", behavior: reduced ? "auto" : "smooth" });
+  scrollToElement(document.getElementById(`finding-${key}`));
 }
 
 function ignoreFinding(key: string): void {
   ignored.value.add(key);
   expandedFindings.value.delete(key);
 }
+
+function restoreFinding(key: string): void {
+  ignored.value.delete(key);
+}
+
+const emptyMessage = computed(() =>
+  searching.value ? "No node matches the search. Clear it to see the fleet." : "This session can see no nodes at all.",
+);
 
 function addToGroup(finding: Finding): void {
   const view = views.value.find((candidate) => candidate.row.nodeId === finding.nodeId);
@@ -445,6 +458,11 @@ async function openNode(nodeId: string): Promise<void> {
     return;
   }
   selectedNodeId.value = nodeId;
+  // The panel mounts under the table, which on a full fleet is below the
+  // fold; a click whose only visible effect is a 2px bar is a click that did
+  // nothing. Bring the panel up on the base duration.
+  await nextTick();
+  scrollToElement(document.querySelector<HTMLElement>(".detail"));
   await loadSelectedReview();
 }
 
@@ -686,7 +704,7 @@ function nodesWord(count: number): string {
       <CircleAlert :size="16" /><span>{{ bootError }}</span>
     </div>
     <div v-if="error" class="notice danger" role="alert">
-      <CircleAlert :size="16" /><span>{{ error }}</span>
+      <CircleAlert :size="16" /><span class="pre-line">{{ error }}</span>
       <button class="icon-button" type="button" aria-label="Dismiss" @click="error = ''"><X :size="14" /></button>
     </div>
     <div v-if="notice" class="notice ok" aria-live="polite">
@@ -748,22 +766,12 @@ function nodesWord(count: number): string {
         :ignored="ignored"
         :observed-at="observedAt"
         :can-see-reality="canSeeReality"
-        :empty="matchedViews.length === 0"
+        :error="error"
+        :empty-message="emptyMessage"
         @sort="onSort"
         @open="openNode"
         @finding="focusFinding"
-      />
-
-      <ExposureFindings
-        :findings="findings"
-        :expanded="expandedFindings"
-        :reviews="reviews"
-        :review-loading="reviewLoading"
-        :review-errors="reviewErrors"
-        :can-admin="canAdmin"
-        @toggle="toggleFinding"
-        @add="addToGroup"
-        @ignore="ignoreFinding"
+        @refresh="refresh(true)"
       />
 
       <NodeDetail
@@ -777,6 +785,20 @@ function nodesWord(count: number): string {
         @edit-binding="openBinding"
         @plan="openApply"
         @adopt="adopt"
+      />
+
+      <ExposureFindings
+        :findings="findings"
+        :expanded="expandedFindings"
+        :ignored="ignored"
+        :reviews="reviews"
+        :review-loading="reviewLoading"
+        :review-errors="reviewErrors"
+        :can-admin="canAdmin"
+        @toggle="toggleFinding"
+        @add="addToGroup"
+        @ignore="ignoreFinding"
+        @restore="restoreFinding"
       />
     </template>
 

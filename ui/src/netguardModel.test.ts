@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildRemote,
   driftTone,
+  endSentence,
   formatRanges,
   orderListeners,
   parseRanges,
@@ -113,5 +114,13 @@ describe("bridge payload safety", () => {
   it("still falls back when there is nothing usable to report", () => {
     expect(safeErrorMessage({}, "fallback")).toBe("fallback");
     expect(safeErrorMessage(new Error("  "), "fallback")).toBe("fallback");
+  });
+});
+
+describe("endSentence", () => {
+  it("adds the period a wire message lacks and leaves one that has it", () => {
+    expect(endSentence("upstream refused firewall/reality: 503 service unavailable")).toBe("upstream refused firewall/reality: 503 service unavailable.");
+    expect(endSentence("node has no managed binding.")).toBe("node has no managed binding.");
+    expect(endSentence("  ")).toBe("");
   });
 });

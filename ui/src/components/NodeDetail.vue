@@ -20,6 +20,7 @@ import {
   type PostureRow,
 } from "../posture";
 import {
+  endSentence,
   orderListeners,
   severityTone,
   suggestionsByPort,
@@ -110,7 +111,8 @@ function severityLabel(severity: string): string {
         <TriangleAlert :size="16" />
         <div>
           <strong>Intent could not be compiled for this node</strong>
-          <p>{{ reviewError }} The reported evidence below is still accurate.</p>
+          <p>{{ endSentence(reviewError) }}</p>
+          <p>The reported evidence below is still accurate.</p>
         </div>
       </div>
 

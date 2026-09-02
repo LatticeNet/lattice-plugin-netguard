@@ -198,6 +198,10 @@ h3 {
   color: var(--ng-warn);
 }
 
+.pre-line {
+  white-space: pre-line;
+}
+
 .mono {
   font-family: var(--ng-mono);
   font-size: 12px;
@@ -714,8 +718,15 @@ td small {
   color: var(--ng-muted);
 }
 
-/* An unexplained port is a button: it opens its finding under the table. Red
-   is the only carrier of "nothing allows this" beyond the "(!)" itself. */
+/* Ports never break inside a token; the ", " between them is where a long
+   list wraps on a narrow cell. */
+.span-allowed,
+.span-chip {
+  white-space: nowrap;
+}
+
+/* An unexplained port is a button: it opens its finding under the table. The
+   "(!)" and the underline carry "nothing allows this" without the red. */
 .span-chip {
   display: inline;
   padding: 0 2px;
@@ -726,6 +737,9 @@ td small {
   background: transparent;
   font: inherit;
   font-weight: 650;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
   transition: background-color var(--duration-fast) var(--ease-out);
 }
 
@@ -746,9 +760,45 @@ td small {
 
 .exposure-cell small,
 .managed-cell small,
+.drift-cell small,
 .seen-cell small {
   display: block;
   margin-top: 2px;
+}
+
+/* While the box can still scroll right, its edge fades and a caption below
+   names what is past it. Both go when the operator reaches the end. */
+.table-scroll::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 40px;
+  background: linear-gradient(to left, var(--ng-card), transparent);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--duration-fast) var(--ease-out);
+}
+
+.table-scroll[data-more-right="true"]::after {
+  opacity: 1;
+}
+
+.table-hint {
+  padding: 8px 12px;
+  border-top: 1px solid var(--ng-border);
+  color: var(--ng-muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.error-state .pre-line {
+  max-width: 62ch;
+}
+
+.error-state .button {
+  margin-top: 4px;
 }
 
 .seen-cell {
@@ -827,8 +877,38 @@ td small {
 
 .finding-actions {
   display: inline-flex;
-  gap: 4px;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
   padding-right: 12px;
+}
+
+.finding-static {
+  flex-wrap: wrap;
+  cursor: default;
+}
+
+.finding-static:hover {
+  background: transparent;
+}
+
+.finding-row[data-ignored="true"] .finding-text {
+  color: var(--ng-muted);
+}
+
+.finding-ignored,
+.finding-readonly {
+  color: var(--ng-muted);
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+
+.finding-ignored {
+  flex-basis: 100%;
+}
+
+.finding-note {
+  font-size: 11.5px;
 }
 
 /* Expand and collapse as a grid track from 0fr to 1fr: interruptible, no
@@ -1399,12 +1479,16 @@ td small {
 
   /* The exposure column wraps and the suggestion rows stack. The node column
      stays sticky inside the sideways-scrolling table. */
+  /* The node and the ports fit the visible box together; the ports wrap at
+     the commas and the other columns scroll in from the right. */
   .exposure-table {
-    min-width: 720px;
+    min-width: 640px;
   }
 
   .exposure-cell {
-    min-width: 200px;
+    width: 180px;
+    min-width: 180px;
+    max-width: 180px;
   }
 
   .exposure-table td.node-cell {
