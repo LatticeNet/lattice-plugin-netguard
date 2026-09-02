@@ -8,7 +8,7 @@
 import { reactive, ref, watch } from "vue";
 import { Plus, Trash2 } from "@lucide/vue";
 
-import AnchoredOverlay from "./AnchoredOverlay.vue";
+import ModalDialog from "./ModalDialog.vue";
 import {
   buildRemote,
   formatRanges,
@@ -20,7 +20,6 @@ import {
 
 const props = defineProps<{
   open: boolean;
-  anchorTop: number;
   group?: SecurityGroup;
   saving: boolean;
   error: string;
@@ -112,9 +111,8 @@ function submit(): void {
 </script>
 
 <template>
-  <AnchoredOverlay
+  <ModalDialog
     :open="open"
-    :anchor-top="anchorTop"
     :busy="saving"
     width="wide"
     :title="group ? `Edit ${group.name}` : 'New security group'"
@@ -202,5 +200,5 @@ function submit(): void {
       <button class="button secondary" type="button" :disabled="saving" @click="emit('close')">Cancel</button>
       <button class="button primary" type="button" :disabled="saving" @click="submit">Save group</button>
     </template>
-  </AnchoredOverlay>
+  </ModalDialog>
 </template>

@@ -5,10 +5,9 @@
  *
  * The frame is a viewport. The host sizes this iframe to fill the console's
  * main region, so this document scrolls inside it and `position: fixed`,
- * `position: sticky` and `vh` resolve against the visible window. None of that
- * held while the host sized the frame to the content height it was told, which
- * is why overlays were positioned against a measured document anchor. They are
- * viewport-centred now and that anchor is inert.
+ * `position: sticky` and `vh` resolve against the visible window. Overlays are
+ * fixed and centred on it, the column header is sticky, and this document is
+ * the only vertical scroller: no block on the page caps its own height.
  *
  * The console owns the type and the palette. Fonts are inherited, colours come
  * from host tokens, and the fallbacks exist for a host that sends none, not as
@@ -772,11 +771,12 @@ td small {
   font-size: 12px;
 }
 
+/* No height cap: a ruleset is tens of lines and the page is the scroller. Long
+   lines scroll sideways inside the block rather than widening the table. */
 .code {
-  max-height: 420px;
   margin: 0;
   padding: 12px;
-  overflow: auto;
+  overflow-x: auto;
   background: var(--ng-subtle-bg);
   font-family: var(--ng-mono);
   font-size: 11.5px;
@@ -807,11 +807,7 @@ td small {
 
 /* ── overlays ────────────────────────────────────────────────────────────── */
 
-/* Fixed, and centred on the window the operator can see. The scrim used to span
-   the document and the panel opened at a measured anchor, because the frame had
-   no viewport of its own; under a viewport frame that anchor is a document
-   coordinate and would drop the panel below the fold once the page is
-   scrolled. */
+/* Fixed, and centred on the window the operator can see. */
 .overlay-root {
   position: fixed;
   inset: 0;
@@ -828,11 +824,10 @@ td small {
 }
 
 .overlay-panel {
-  /* Static, so the document-space `top` the overlay component still sets is
-     ignored: `top` applies to positioned elements only, and a grid item may
-     carry a z-index without being one. A column, so the head and the foot stay
-     put and only the body scrolls. */
-  position: static;
+  /* A column, so the head and the foot stay put and only the body scrolls.
+     The body is the one inner scroller this surface allows, because a fixed
+     modal is not on the page and the page cannot scroll it into view. */
+  position: relative;
   z-index: 1;
   display: flex;
   flex-direction: column;
@@ -884,10 +879,7 @@ td small {
 }
 
 .overlay-body {
-  /* Whatever the window leaves after the head and the foot. This was a 560px
-     cap because inside a content-sized frame 1vh was a share of the whole
-     document, so a viewport-relative cap let a long diff grow to thousands of
-     pixels instead of scrolling inside the panel. */
+  /* Whatever the window leaves after the head and the foot. */
   flex: 1;
   min-height: 0;
   padding: 14px 15px;

@@ -8,12 +8,13 @@
  * will change if I apply (diff and two-step confirm).
  *
  * Two constraints shape everything below. The frame the host renders this in
- * is sized to reported content height, so it is not a viewport: no fixed
- * positioning, no sticky, and overlays are anchored in document space. And
- * every state has to be honest, because a firewall panel that renders an
- * unreported node as a healthy one is worse than no panel at all.
+ * is a viewport the host sizes itself, so this document is the one scroller
+ * and overlays are fixed against the window; nothing here measures the page
+ * or reports a height. And every state has to be honest, because a firewall
+ * panel that renders an unreported node as a healthy one is worse than no
+ * panel at all.
  */
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, onBeforeUnmount, ref } from "vue";
 import {
   Boxes,
   CheckCircle2,
@@ -30,15 +31,14 @@ import {
 
 import { BridgeClient, canCall, type HostInit } from "@latticenet/plugin-bridge";
 
-import AnchoredOverlay from "./components/AnchoredOverlay.vue";
 import ApplyDialog from "./components/ApplyDialog.vue";
 import BindingEditor from "./components/BindingEditor.vue";
 import FleetTable from "./components/FleetTable.vue";
 import GroupEditor from "./components/GroupEditor.vue";
+import ModalDialog from "./components/ModalDialog.vue";
 import NodeDetail from "./components/NodeDetail.vue";
 import PostureBar from "./components/PostureBar.vue";
 import ZoneEditor from "./components/ZoneEditor.vue";
-import { anchorTopFrom } from "./anchor";
 import {
   countPosture,
   joinPosture,
@@ -180,7 +180,6 @@ async function openNode(nodeId: string): Promise<void> {
   if (selectedNodeId.value === nodeId) {
     selectedNodeId.value = "";
     review.value = undefined;
-    await resize();
     return;
   }
   selectedNodeId.value = nodeId;
@@ -200,7 +199,6 @@ async function openNode(nodeId: string): Promise<void> {
     reviewError.value = safeErrorMessage(cause, "This node's review could not be loaded");
   } finally {
     reviewLoading.value = false;
-    await resize();
   }
 }
 
@@ -261,19 +259,16 @@ async function refresh(background = false): Promise<void> {
   error.value = failures.join(" ");
   loading.value = false;
   refreshing.value = false;
-  await resize();
 }
 
 // ── authoring ───────────────────────────────────────────────────────────────
 
-const anchorTop = ref(0);
 const groupDialog = ref(false);
 const editingGroup = ref<SecurityGroup>();
 const groupSaving = ref(false);
 const groupError = ref("");
 
-function openGroup(event: Event, group?: SecurityGroup): void {
-  anchorTop.value = anchorTopFrom(event);
+function openGroup(group?: SecurityGroup): void {
   editingGroup.value = group;
   groupError.value = "";
   groupDialog.value = true;
@@ -300,8 +295,7 @@ const editingZone = ref<GuardZone>();
 const zoneSaving = ref(false);
 const zoneError = ref("");
 
-function openZone(event: Event, zone?: GuardZone): void {
-  anchorTop.value = anchorTopFrom(event);
+function openZone(zone?: GuardZone): void {
   editingZone.value = zone;
   zoneError.value = "";
   zoneDialog.value = true;
@@ -327,8 +321,7 @@ const bindingDialog = ref(false);
 const bindingSaving = ref(false);
 const bindingError = ref("");
 
-function openBinding(event: Event): void {
-  anchorTop.value = anchorTopFrom(event);
+function openBinding(): void {
   bindingError.value = "";
   bindingDialog.value = true;
 }
@@ -367,8 +360,7 @@ const deleteTarget = ref<{ type: "group" | "zone"; id: string; label: string }>(
 const deleteError = ref("");
 const deleting = ref(false);
 
-function askDelete(event: Event, type: "group" | "zone", id: string, label: string): void {
-  anchorTop.value = anchorTopFrom(event);
+function askDelete(type: "group" | "zone", id: string, label: string): void {
   deleteError.value = "";
   deleteTarget.value = { type, id, label };
 }
@@ -401,8 +393,7 @@ const applyDialog = ref(false);
 const planning = ref(false);
 const planError = ref("");
 
-function openApply(event: Event): void {
-  anchorTop.value = anchorTopFrom(event);
+function openApply(): void {
   planError.value = "";
   applyDialog.value = true;
 }
@@ -433,39 +424,15 @@ async function confirmApply(acceptLockoutRisk: boolean): Promise<void> {
 }
 
 // ── host plumbing ───────────────────────────────────────────────────────────
-
-const dialogOpen = computed(
-  () =>
-    groupDialog.value || zoneDialog.value || bindingDialog.value || applyDialog.value || Boolean(deleteTarget.value),
-);
-
-async function resize(): Promise<void> {
-  await nextTick();
-  bridge?.resize(document.documentElement.scrollHeight);
-}
-
-watch([visibleRows, tab, selectedNodeId, dialogOpen], () => void resize());
-
-let observer: ResizeObserver | undefined;
-let poller: ReturnType<typeof setInterval> | undefined;
-
-onMounted(() => {
-  observer = new ResizeObserver(() => void resize());
-  observer.observe(document.body);
-  // Never refresh while the operator is working. A background reload re-sorts
-  // the fleet and changes the page height, which moves rows under the pointer:
-  // in a panel whose rows open a node and whose buttons apply a firewall, that
-  // is how the wrong node gets clicked. Reading a diff or a node's evidence
-  // pauses the poll, and the Refresh button is always there.
-  poller = setInterval(() => {
-    if (!loading.value && !dialogOpen.value && !selectedNodeId.value) void refresh(true);
-  }, 30_000);
-  void resize();
-});
+//
+// Nothing here measures this document's height or polls. The host frame is a
+// viewport the host sizes itself, so a page that reported its own height was
+// running a full synchronous layout on every body resize and throwing the
+// answer away. And a background reload re-sorts the fleet and moves rows under
+// the pointer: in a panel whose rows open a node and whose buttons apply a
+// firewall, that is how the wrong node gets clicked. Refresh is a button.
 
 onBeforeUnmount(() => {
-  observer?.disconnect();
-  if (poller) clearInterval(poller);
   bridge?.dispose();
 });
 
@@ -572,7 +539,7 @@ function ruleSummary(rule: GuardRule): string {
           <h2>Security groups</h2>
           <p class="subtle">Ordered rules, attached to one or more nodes. The chain policy stays default drop.</p>
         </div>
-        <button v-if="canAdmin" class="button primary" type="button" @click="openGroup($event)">
+        <button v-if="canAdmin" class="button primary" type="button" @click="openGroup()">
           <Plus :size="14" />New group
         </button>
       </div>
@@ -602,14 +569,14 @@ function ruleSummary(rule: GuardRule): string {
                 <td>{{ group.source || 'stored' }}<small>v{{ group.version }}</small></td>
                 <td class="numeric">
                   <div v-if="canAdmin" class="actions">
-                    <button class="icon-button bordered" type="button" aria-label="Edit group" @click="openGroup($event, group)">
+                    <button class="icon-button bordered" type="button" aria-label="Edit group" @click="openGroup(group)">
                       <Pencil :size="14" />
                     </button>
                     <button
                       class="icon-button bordered destructive"
                       type="button"
                       aria-label="Delete group"
-                      @click="askDelete($event, 'group', group.id, group.name)"
+                      @click="askDelete('group', group.id, group.name)"
                     >
                       <Trash2 :size="14" />
                     </button>
@@ -633,7 +600,7 @@ function ruleSummary(rule: GuardRule): string {
           <h2>Trusted zones</h2>
           <p class="subtle">Interfaces and CIDRs accepted before any security group is evaluated.</p>
         </div>
-        <button v-if="canAdmin" class="button primary" type="button" @click="openZone($event)">
+        <button v-if="canAdmin" class="button primary" type="button" @click="openZone()">
           <Plus :size="14" />New zone
         </button>
       </div>
@@ -655,14 +622,14 @@ function ruleSummary(rule: GuardRule): string {
                 <td>{{ zone.builtin ? 'built in' : 'custom' }}</td>
                 <td class="numeric">
                   <div v-if="canAdmin && !zone.builtin" class="actions">
-                    <button class="icon-button bordered" type="button" aria-label="Edit zone" @click="openZone($event, zone)">
+                    <button class="icon-button bordered" type="button" aria-label="Edit zone" @click="openZone(zone)">
                       <Pencil :size="14" />
                     </button>
                     <button
                       class="icon-button bordered destructive"
                       type="button"
                       aria-label="Delete zone"
-                      @click="askDelete($event, 'zone', zone.id, zone.name)"
+                      @click="askDelete('zone', zone.id, zone.name)"
                     >
                       <Trash2 :size="14" />
                     </button>
@@ -686,7 +653,6 @@ function ruleSummary(rule: GuardRule): string {
 
     <GroupEditor
       :open="groupDialog"
-      :anchor-top="anchorTop"
       :group="editingGroup"
       :saving="groupSaving"
       :error="groupError"
@@ -695,7 +661,6 @@ function ruleSummary(rule: GuardRule): string {
     />
     <ZoneEditor
       :open="zoneDialog"
-      :anchor-top="anchorTop"
       :zone="editingZone"
       :saving="zoneSaving"
       :error="zoneError"
@@ -704,7 +669,6 @@ function ruleSummary(rule: GuardRule): string {
     />
     <BindingEditor
       :open="bindingDialog"
-      :anchor-top="anchorTop"
       :node="selectedRow?.intent"
       :groups="overview.groups"
       :zones="overview.zones"
@@ -715,7 +679,6 @@ function ruleSummary(rule: GuardRule): string {
     />
     <ApplyDialog
       :open="applyDialog"
-      :anchor-top="anchorTop"
       :row="selectedRow"
       :baseline="rulesetBaseline"
       :ruleset="review?.ruleset ?? ''"
@@ -727,9 +690,8 @@ function ruleSummary(rule: GuardRule): string {
       @confirm="confirmApply"
     />
 
-    <AnchoredOverlay
+    <ModalDialog
       :open="Boolean(deleteTarget)"
-      :anchor-top="anchorTop"
       :busy="deleting"
       width="narrow"
       :title="`Delete ${deleteTarget?.label ?? ''}`"
@@ -748,6 +710,6 @@ function ruleSummary(rule: GuardRule): string {
           <LoaderCircle v-if="deleting" class="spin" :size="14" />Delete
         </button>
       </template>
-    </AnchoredOverlay>
+    </ModalDialog>
   </main>
 </template>
