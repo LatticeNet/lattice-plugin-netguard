@@ -198,6 +198,11 @@ export interface RealityDetail {
   stale_after?: string | null;
 }
 
+/** `reality` called with a node_id answers with the detail under `node`. */
+export interface RealityDetailResponse {
+  node: RealityDetail;
+}
+
 export interface GuardSuggestion {
   id: string;
   code: string;
