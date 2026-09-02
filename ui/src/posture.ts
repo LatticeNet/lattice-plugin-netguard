@@ -356,6 +356,16 @@ export function driftUnknownReason(row: PostureRow): string {
   return "one side of the comparison is missing";
 }
 
+/** The same reason in three words, for the table cell under the pill. */
+export function driftShortReason(row: PostureRow): string {
+  if (row.driftState === "drift") return "live table differs";
+  if (row.driftState === "in_sync") return "";
+  if (row.snapshotStatus === "unknown") return "never reported";
+  if (!row.appliedTableSha) return "never applied";
+  if (!row.managedSha) return "no managed table";
+  return "one side missing";
+}
+
 export type Tone = "ok" | "warn" | "danger" | "muted";
 
 export function coverageTone(coverage: Coverage): Tone {

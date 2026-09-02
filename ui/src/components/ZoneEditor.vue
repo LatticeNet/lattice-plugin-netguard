@@ -5,12 +5,11 @@
  */
 import { reactive, ref, watch } from "vue";
 
-import AnchoredOverlay from "./AnchoredOverlay.vue";
+import ModalDialog from "./ModalDialog.vue";
 import type { GuardZone } from "../netguardModel";
 
 const props = defineProps<{
   open: boolean;
-  anchorTop: number;
   zone?: GuardZone;
   saving: boolean;
   error: string;
@@ -61,9 +60,8 @@ function submit(): void {
 </script>
 
 <template>
-  <AnchoredOverlay
+  <ModalDialog
     :open="open"
-    :anchor-top="anchorTop"
     :busy="saving"
     :title="zone ? `Edit ${zone.name}` : 'New trusted zone'"
     subtitle="Traffic arriving on a trusted interface or from a trusted CIDR is accepted before any security group is evaluated."
@@ -97,5 +95,5 @@ function submit(): void {
       <button class="button secondary" type="button" :disabled="saving" @click="emit('close')">Cancel</button>
       <button class="button primary" type="button" :disabled="saving" @click="submit">Save zone</button>
     </template>
-  </AnchoredOverlay>
+  </ModalDialog>
 </template>

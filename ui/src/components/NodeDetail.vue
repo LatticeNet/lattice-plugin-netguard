@@ -20,6 +20,7 @@ import {
   type PostureRow,
 } from "../posture";
 import {
+  endSentence,
   orderListeners,
   severityTone,
   suggestionsByPort,
@@ -36,8 +37,8 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{
-  (event: "edit-binding", payload: Event): void;
-  (event: "plan", payload: Event): void;
+  (event: "edit-binding"): void;
+  (event: "plan"): void;
   (event: "adopt"): void;
 }>();
 
@@ -86,7 +87,7 @@ function severityLabel(severity: string): string {
           v-if="canAdmin && row.coverage !== 'legacy' && row.intent"
           class="button secondary"
           type="button"
-          @click="emit('edit-binding', $event)"
+          @click="emit('edit-binding')"
         >
           <Pencil :size="14" />Edit binding
         </button>
@@ -94,7 +95,7 @@ function severityLabel(severity: string): string {
           v-if="canPlan && row.coverage === 'managed'"
           class="button primary"
           type="button"
-          @click="emit('plan', $event)"
+          @click="emit('plan')"
         >
           <Play :size="14" />Review and apply
         </button>
@@ -110,7 +111,8 @@ function severityLabel(severity: string): string {
         <TriangleAlert :size="16" />
         <div>
           <strong>Intent could not be compiled for this node</strong>
-          <p>{{ reviewError }} The reported evidence below is still accurate.</p>
+          <p>{{ endSentence(reviewError) }}</p>
+          <p>The reported evidence below is still accurate.</p>
         </div>
       </div>
 

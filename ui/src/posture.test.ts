@@ -5,6 +5,7 @@ import {
   definiteTime,
   countPosture,
   coverageLabel,
+  driftShortReason,
   driftToneFor,
   driftUnknownReason,
   joinPosture,
@@ -246,5 +247,16 @@ describe("definiteTime", () => {
       [],
     );
     expect(row.lastAppliedAt).toBeUndefined();
+  });
+});
+
+describe("driftShortReason", () => {
+  it("names the missing side in a few words", () => {
+    const base = joinPosture([intent("a")], [summary("a", { snapshot_status: "unknown", drift_state: "unknown" })])[0]!;
+    expect(driftShortReason(base)).toBe("never reported");
+    expect(driftShortReason({ ...base, snapshotStatus: "fresh" })).toBe("never applied");
+    expect(driftShortReason({ ...base, snapshotStatus: "fresh", appliedTableSha: "a" })).toBe("no managed table");
+    expect(driftShortReason({ ...base, snapshotStatus: "fresh", appliedTableSha: "a", managedSha: "b", driftState: "drift" })).toBe("live table differs");
+    expect(driftShortReason({ ...base, driftState: "in_sync" })).toBe("");
   });
 });

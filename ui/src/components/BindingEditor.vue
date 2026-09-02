@@ -6,12 +6,11 @@
  */
 import { reactive, watch } from "vue";
 
-import AnchoredOverlay from "./AnchoredOverlay.vue";
+import ModalDialog from "./ModalDialog.vue";
 import type { GuardNode, GuardZone, SecurityGroup } from "../netguardModel";
 
 const props = defineProps<{
   open: boolean;
-  anchorTop: number;
   node?: GuardNode;
   groups: readonly SecurityGroup[];
   zones: readonly GuardZone[];
@@ -64,9 +63,8 @@ function submit(): void {
 </script>
 
 <template>
-  <AnchoredOverlay
+  <ModalDialog
     :open="open"
-    :anchor-top="anchorTop"
     :busy="saving"
     :title="`Binding for ${node?.node_name || node?.node_id || 'node'}`"
     subtitle="Zones are accepted first, then attached security groups, then the default drop."
@@ -126,5 +124,5 @@ function submit(): void {
       <button class="button secondary" type="button" :disabled="saving" @click="emit('close')">Cancel</button>
       <button class="button primary" type="button" :disabled="saving" @click="submit">Save binding</button>
     </template>
-  </AnchoredOverlay>
+  </ModalDialog>
 </template>

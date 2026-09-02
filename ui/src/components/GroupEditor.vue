@@ -8,7 +8,7 @@
 import { reactive, ref, watch } from "vue";
 import { Plus, Trash2 } from "@lucide/vue";
 
-import AnchoredOverlay from "./AnchoredOverlay.vue";
+import ModalDialog from "./ModalDialog.vue";
 import {
   buildRemote,
   formatRanges,
@@ -20,8 +20,14 @@ import {
 
 const props = defineProps<{
   open: boolean;
-  anchorTop: number;
   group?: SecurityGroup;
+  /**
+   * Rules to append when the editor opens, from an exposure finding. With a
+   * group they land after its existing rules; without one they seed a new
+   * group named `draftName`.
+   */
+  draftRules?: readonly GuardRule[];
+  draftName?: string;
   saving: boolean;
   error: string;
 }>();
@@ -65,10 +71,11 @@ watch(
     if (!isOpen) return;
     localError.value = "";
     form.id = props.group?.id ?? "";
-    form.name = props.group?.name ?? "";
+    form.name = props.group?.name ?? props.draftName ?? "";
     form.description = props.group?.description ?? "";
     form.version = props.group?.version ?? 0;
-    form.rules = (props.group?.rules?.length ? props.group.rules : [blankRule()]).map((rule) => ({
+    const seeded = [...(props.group?.rules ?? []), ...(props.draftRules ?? [])];
+    form.rules = (seeded.length ? seeded : [blankRule()]).map((rule) => ({
       ...rule,
       ports: rule.ports ?? [],
       portsText: formatRanges(rule.ports),
@@ -112,9 +119,8 @@ function submit(): void {
 </script>
 
 <template>
-  <AnchoredOverlay
+  <ModalDialog
     :open="open"
-    :anchor-top="anchorTop"
     :busy="saving"
     width="wide"
     :title="group ? `Edit ${group.name}` : 'New security group'"
@@ -202,5 +208,5 @@ function submit(): void {
       <button class="button secondary" type="button" :disabled="saving" @click="emit('close')">Cancel</button>
       <button class="button primary" type="button" :disabled="saving" @click="submit">Save group</button>
     </template>
-  </AnchoredOverlay>
+  </ModalDialog>
 </template>

@@ -12,14 +12,13 @@
 import { computed, ref, watch } from "vue";
 import { CircleAlert, LoaderCircle, ShieldAlert } from "@lucide/vue";
 
-import AnchoredOverlay from "./AnchoredOverlay.vue";
+import ModalDialog from "./ModalDialog.vue";
 import { collapseUnchanged, diffRulesets, summarizeDiff } from "../diff";
 import type { PostureRow } from "../posture";
 import type { LintFinding } from "../netguardModel";
 
 const props = defineProps<{
   open: boolean;
-  anchorTop: number;
   row?: PostureRow;
   /** The ruleset as it was when this node's detail was opened. */
   baseline: string;
@@ -74,9 +73,8 @@ function advance(): void {
 </script>
 
 <template>
-  <AnchoredOverlay
+  <ModalDialog
     :open="open"
-    :anchor-top="anchorTop"
     :busy="planning"
     width="wide"
     :title="step === 1 ? `Review the change to ${nodeLabel}` : `Confirm apply to ${nodeLabel}`"
@@ -202,5 +200,5 @@ function advance(): void {
         </button>
       </template>
     </template>
-  </AnchoredOverlay>
+  </ModalDialog>
 </template>
