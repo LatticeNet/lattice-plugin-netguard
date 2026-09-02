@@ -335,7 +335,9 @@ function nodeOr(state: State, nodeId: unknown): NodeState {
 }
 
 function overviewOf(state: State): Overview {
-  return { groups: state.groups, zones: state.zones, nodes: state.nodes.map((entry) => entry.node) };
+  // A node nobody bound is in the reality roster only, as on the real server.
+  const bound = state.nodes.filter((entry) => entry.spec.shape !== "unbound" && entry.spec.shape !== "never");
+  return { groups: state.groups, zones: state.zones, nodes: bound.map((entry) => entry.node) };
 }
 
 type Handler = (payload: Record<string, any>) => unknown;

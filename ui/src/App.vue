@@ -258,6 +258,8 @@ async function refresh(background = false): Promise<void> {
   observedAt.value = Date.now();
   loading.value = false;
   refreshing.value = false;
+  // A node opened by URL needs its review the same way a clicked one does.
+  if (!background && selectedNodeId.value) void loadSelectedReview();
   await loadDetails(epoch);
 }
 
@@ -429,15 +431,21 @@ const selectedReviewError = computed(
   () => selectedReview.value?.compile_error || reviewErrors.value.get(selectedNodeId.value) || "",
 );
 
+/** A fresh review for the selected node, and the diff baseline it opened with. */
+async function loadSelectedReview(): Promise<void> {
+  const nodeId = selectedNodeId.value;
+  rulesetBaseline.value = "";
+  await ensureReview(nodeId, true);
+  if (selectedNodeId.value === nodeId) rulesetBaseline.value = reviews.value.get(nodeId)?.ruleset ?? "";
+}
+
 async function openNode(nodeId: string): Promise<void> {
   if (selectedNodeId.value === nodeId) {
     selectedNodeId.value = "";
     return;
   }
   selectedNodeId.value = nodeId;
-  rulesetBaseline.value = "";
-  await ensureReview(nodeId, true);
-  rulesetBaseline.value = reviews.value.get(nodeId)?.ruleset ?? "";
+  await loadSelectedReview();
 }
 
 async function reloadReview(): Promise<void> {
@@ -627,8 +635,12 @@ onBeforeUnmount(() => {
 
 // ── groups and zones ────────────────────────────────────────────────────────
 
+/** The merged preview, only where merging says something the rule list does not. */
 function groupPreview(group: SecurityGroup): string[] {
-  return allowsPreview(group.rules ?? [], exposureContext.value);
+  const rules = group.rules ?? [];
+  const preview = allowsPreview(rules, exposureContext.value);
+  const enabledAllows = rules.filter((rule) => !rule.disabled && rule.action === "allow" && rule.direction === "ingress").length;
+  return preview.length < enabledAllows ? preview : [];
 }
 
 function groupUsedBy(group: SecurityGroup): number {

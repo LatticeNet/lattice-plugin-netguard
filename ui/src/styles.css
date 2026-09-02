@@ -526,6 +526,10 @@ tr:focus-within .row-actions {
    background-attachment local/scroll is what makes the shadows appear only on
    the side that still has content. */
 .table-scroll {
+  /* A containing block, so the visually hidden labels inside the cells (they
+     are absolutely positioned) stay inside this scroll box instead of
+     widening the document by a pixel past the frame on a phone. */
+  position: relative;
   width: 100%;
   overflow-x: auto;
   background:
@@ -623,8 +627,8 @@ th[aria-sort="descending"] .sort-button {
   color: var(--ng-fg);
 }
 
-th:not(.numeric) > span,
-th:not(.numeric):not(:has(.sort-button)) {
+/* Headers without a sort button carry the same label style themselves. */
+th:not(:has(.sort-button)) {
   padding: 8px 12px;
   color: var(--ng-muted);
   font-size: 10.5px;
@@ -867,10 +871,9 @@ td small {
   color: var(--ng-muted);
 }
 
-.finding-review {
-  display: flex;
-  align-items: center;
-  gap: 6px;
+.finding-review .spin {
+  vertical-align: -2px;
+  margin-right: 6px;
 }
 
 .rule-summary li {
@@ -1115,7 +1118,9 @@ td small {
 .overlay-scrim {
   position: absolute;
   inset: 0;
-  background: color-mix(in srgb, var(--ng-fg) 42%, transparent);
+  /* A dark tint in both themes. Mixing the foreground brightened the page
+     behind a dialog on a dark console instead of dimming it. */
+  background: color-mix(in srgb, #05070a 58%, transparent);
 }
 
 .overlay-panel {
