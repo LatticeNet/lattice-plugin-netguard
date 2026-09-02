@@ -21,6 +21,13 @@ import {
 const props = defineProps<{
   open: boolean;
   group?: SecurityGroup;
+  /**
+   * Rules to append when the editor opens, from an exposure finding. With a
+   * group they land after its existing rules; without one they seed a new
+   * group named `draftName`.
+   */
+  draftRules?: readonly GuardRule[];
+  draftName?: string;
   saving: boolean;
   error: string;
 }>();
@@ -64,10 +71,11 @@ watch(
     if (!isOpen) return;
     localError.value = "";
     form.id = props.group?.id ?? "";
-    form.name = props.group?.name ?? "";
+    form.name = props.group?.name ?? props.draftName ?? "";
     form.description = props.group?.description ?? "";
     form.version = props.group?.version ?? 0;
-    form.rules = (props.group?.rules?.length ? props.group.rules : [blankRule()]).map((rule) => ({
+    const seeded = [...(props.group?.rules ?? []), ...(props.draftRules ?? [])];
+    form.rules = (seeded.length ? seeded : [blankRule()]).map((rule) => ({
       ...rule,
       ports: rule.ports ?? [],
       portsText: formatRanges(rule.ports),
