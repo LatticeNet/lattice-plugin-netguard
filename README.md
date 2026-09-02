@@ -12,21 +12,54 @@ base Dashboard has no NetGuard page of its own.
 
 ## Operator surface
 
-One entry, three tabs:
+One entry, three lenses, and a proof line under the title that says when the
+fleet was observed and what it counted (`observed 03:52:10Z, 41s ago · 33
+nodes · 25 managed · 4 observe only · 2 drift · 2 stale`).
 
-- **Fleet:** every node the session can see, with declared intent joined to the
-  node's own reported snapshot. The posture bar counts drifted, apply-failed,
-  stale, never-reported and in-sync nodes, and each count filters the table.
-  Opening a node shows its drift hashes, listening sockets, interfaces, foreign
-  nftables tables, and the ruleset its intent compiles to.
-- **Security groups:** ordered ingress and egress allow or deny rules over
-  protocols, inclusive port ranges, and any/zone/CIDR/node/group/domain remotes.
-  A group is attached to nodes through a binding.
-- **Trusted zones:** interfaces and CIDRs accepted before any security group is
-  evaluated. This is how a management path stays open.
+- **Exposure:** one row per node answering the first question an operator
+  has: what is open to the internet right now. The column is computed from the
+  node's reported listeners on non-loopback binds, minus what a bound group
+  rule or trusted zone confines; a port nothing explains is red and expands,
+  under the table, into the suggestion the server's review produces, with
+  "Add to group" (the group editor pre-filled with the proposed rule) and
+  "Ignore" (session-local, never saved). MANAGED BY names the bound groups, a
+  legacy baseline, or nothing; DRIFT and SEEN carry the drift verdict and the
+  snapshot age. Opening a node shows its drift hashes, listening sockets,
+  interfaces, foreign nftables tables, and the ruleset its intent compiles
+  to, with the per-node review and apply flow.
+- **Groups:** ordered ingress and egress allow or deny rules over protocols,
+  inclusive port ranges, and any/zone/CIDR/node/group/domain remotes, each
+  rule read back as a sentence ("allows TCP 22 from 10.7.0.0/24"), with how
+  many nodes bind the group. A group is attached to nodes through a binding.
+- **Zones:** interfaces and CIDRs accepted before any security group is
+  evaluated, with how many nodes trust each. This is how a management path
+  stays open.
 
-A node that has never reported is never rendered as healthy. Counts that the
-control plane does not have read as "not reported", never as zero.
+A node that has never reported is never rendered as healthy, and an empty
+listener list is never rendered as "nothing open" unless a fresh snapshot says
+so. Counts that the control plane does not have read as "not reported", never
+as zero. The page holds no timer: every age is measured from the fetch the
+proof line names, and Refresh observes again.
+
+The exposure classification mirrors `lattice-server/internal/netguard/suggest.go`
+with two stated differences: a private CIDR remote scopes a rule rather than
+opening the port, and an uncovered listener on a managed node whose live table
+matches the applied one is closed by the default policy, not exposed.
+
+### Dev harness
+
+`ui/dev.html` runs the real plugin build inside a real iframe against a
+stand-in host that speaks the bridge protocol and the production frame model
+(the frame is a viewport; `lattice.plugin.resize` is accepted and ignored).
+
+```sh
+cd ui
+npm ci
+npm run dev
+# http://localhost:5183/dev.html?scenario=fleet&width=1440
+# scenario=fleet|empty|readonly|failing  width=1440|1024|375  theme=dark|light
+# frame=<pane height>  zoom=<factor>  plugin=lens%3Dgroups (forwarded to the plugin)
+```
 
 ## Safety boundary
 
