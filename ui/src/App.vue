@@ -900,6 +900,7 @@ const tiles = computed(() =>
             :review-error="reviewErrorFor(view.row.nodeId)"
             :findings="findingsForNode(view.row.nodeId)"
             :ignored="ignored"
+            :zones="overview.zones"
             :can-admin="canAdmin"
             :can-plan="canPlan"
             @edit-binding="openBinding(view.row.nodeId)"

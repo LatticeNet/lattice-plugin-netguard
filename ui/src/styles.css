@@ -149,6 +149,12 @@ ul {
   background: var(--pc-danger-soft);
 }
 
+/* A socket whose bind address the snapshot did not carry: listed, muted,
+   marked "(?)", and never counted as allowed or unexplained. */
+.ng-span-unknown {
+  color: var(--muted-foreground);
+}
+
 .ng-span-open[data-ignored="true"] {
   color: var(--muted-foreground);
   font-weight: 500;

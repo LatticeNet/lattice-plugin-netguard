@@ -71,6 +71,18 @@ describe("netguard frame model", () => {
     expect(css).toMatch(/\.pc-table-wrap\[data-overflow="x"\]\s*\{[^}]*overflow-x:\s*auto/);
   });
 
+  it("renders on a chassis whose lens strip wraps in a 375 frame", () => {
+    // Four tabs with counts need 378px and the stretched strip has 341 at
+    // 375. A chassis that scrolls the strip instead hides the Zones tab off
+    // the right edge with nothing to say it is there.
+    const css = read("../node_modules/@latticenet/plugin-bridge/dist/chassis/chassis.css").replace(/\/\*[\s\S]*?\*\//g, "");
+    const narrow = css.slice(css.indexOf("@media (max-width: 620px)"));
+    const strip = narrow.match(/\n\s*\.pc-lens-tabs\s*\{([^}]*)\}/);
+    expect(strip, "a narrow .pc-lens-tabs rule").toBeTruthy();
+    expect(strip![1]).toMatch(/flex-wrap:\s*wrap/);
+    expect(strip![1]).not.toMatch(/overflow-x/);
+  });
+
   it("keeps the exposure table inside a 1024 frame", () => {
     // 1024 is the console's content width once its sidebar is open. The
     // chassis workspace pads clamp(16px, 2.2vw, 24px) a side and the card has
