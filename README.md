@@ -28,8 +28,9 @@ publishes. `ui/src/styles.css` adds only what NetGuard alone needs (the port
 list in the exposure cell, the in-place node detail, the findings list, the
 rule rows under a group, the editor forms). Until the chassis ships from the
 package registry, `ui/package.json` points at the chassis branch build packed
-into `ui/vendor/latticenet-plugin-bridge-0.1.0-alpha.2.tgz` (bridge `66559da`,
-which lets the sticky table header pin to the frame); swap it back to the
+into `ui/vendor/latticenet-plugin-bridge-0.1.0-alpha.2.tgz` (bridge `2b8f45e`,
+which lets the sticky table header pin to the frame and wraps the lens strip
+below 620px so the Zones tab stays visible at 375); swap it back to the
 registry version once `0.1.0-alpha.2` is published.
 
 - **Exposure:** one row per node answering the first question an operator

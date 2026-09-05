@@ -13,9 +13,9 @@
 import { computed } from "vue";
 import { Pencil, Play } from "@lucide/vue";
 
-import { PcButton, PcNotice, PcSkeleton, PcStateDot, PcStatePill } from "@latticenet/plugin-bridge/chassis";
+import { PcButton, PcKindChip, PcNotice, PcSkeleton, PcStateDot, PcStatePill } from "@latticenet/plugin-bridge/chassis";
 
-import { formatProcesses, type Finding } from "../exposure";
+import { bindPlacement, formatProcesses, indexInterfaces, zoneIndex, type BindPlacement, type Finding } from "../exposure";
 import {
   driftLabel,
   driftToneFor,
@@ -24,7 +24,16 @@ import {
   snapshotToneFor,
   type PostureRow,
 } from "../posture";
-import { endSentence, orderListeners, severityTone, suggestionsByPort, type Review } from "../netguardModel";
+import {
+  endSentence,
+  orderListeners,
+  severityTone,
+  suggestionsByPort,
+  type GuardListener,
+  type GuardSuggestion,
+  type GuardZone,
+  type Review,
+} from "../netguardModel";
 import { stampUtc } from "../time";
 import { stateTone } from "../tones";
 
@@ -36,6 +45,8 @@ const props = defineProps<{
   /** This node's open ports that no rule explains, ignored ones included. */
   findings: readonly Finding[];
   ignored: ReadonlySet<string>;
+  /** The overview's zones, so a bind address can be placed in one. */
+  zones: readonly GuardZone[];
   canAdmin: boolean;
   canPlan: boolean;
 }>();
@@ -52,8 +63,38 @@ const emit = defineEmits<{
 const reality = computed(() => props.review?.reality?.reality ?? undefined);
 const suggestions = computed(() => props.review?.suggestions ?? []);
 const portIndex = computed(() => suggestionsByPort(suggestions.value));
-const flaggedPorts = computed(() => new Set(portIndex.value.keys()));
+
+/**
+ * Where each socket's bind puts it. The server's per-port hints describe what
+ * the internet can reach, so they are shown only under a public bind; a
+ * socket on loopback or on a zone address carries its placement instead of
+ * a warning it cannot earn.
+ */
+const zoneMap = computed(() => zoneIndex(props.zones, props.review?.node?.zones));
+const interfaceFacts = computed(() => indexInterfaces(reality.value?.interfaces));
+const placements = computed(
+  () => new Map((reality.value?.listeners ?? []).map((listener) => [listener, bindPlacement(listener, zoneMap.value, interfaceFacts.value)] as const)),
+);
+function placementOf(listener: GuardListener): BindPlacement {
+  return placements.value.get(listener) ?? bindPlacement(listener, zoneMap.value, interfaceFacts.value);
+}
+function hintsFor(listener: GuardListener): GuardSuggestion[] {
+  return placementOf(listener).kind === "public" ? (portIndex.value.get(listener.port ?? -1) ?? []) : [];
+}
+const flaggedPorts = computed(
+  () => new Set([...placements.value].filter(([listener, placement]) => placement.kind === "public" && portIndex.value.has(listener.port ?? -1)).map(([listener]) => listener.port ?? -1)),
+);
 const listeners = computed(() => orderListeners(reality.value?.listeners ?? [], flaggedPorts.value));
+/** "10 reported: 6 public, 2 tailscale only, 2 local only." */
+const listenerTally = computed(() => {
+  const counts = new Map<string, number>();
+  for (const placement of placements.value.values()) counts.set(placement.label, (counts.get(placement.label) ?? 0) + 1);
+  const order = (label: string): number => (label === "public" ? 0 : label === "bind not reported" ? 3 : label === "local only" ? 2 : 1);
+  return [...counts.entries()]
+    .sort((a, b) => order(a[0]) - order(b[0]) || a[0].localeCompare(b[0]))
+    .map(([label, count]) => `${count} ${label}`)
+    .join(", ");
+});
 const interfaces = computed(() => reality.value?.interfaces ?? []);
 const foreignTables = computed(() => reality.value?.foreign_tables ?? []);
 const lint = computed(() => props.review?.findings ?? []);
@@ -196,8 +237,8 @@ function lintTone(severity: string): "error" | "warning" {
             The node reported no listening sockets. That is a real finding, not a missing snapshot.
           </p>
           <p v-else>
-            {{ listeners.length }} reported. An owner of "unknown" means the agent could not read the
-            owning process, which needs root on the node.
+            {{ listeners.length }} reported: {{ listenerTally }}. An owner of "unknown" means the agent
+            could not read the owning process, which needs root on the node.
           </p>
         </header>
         <div v-if="listeners.length" class="ng-facts-wrap">
@@ -212,10 +253,14 @@ function lintTone(severity: string): "error" | "warning" {
                 <td class="pc-mono">{{ listener.address || 'all addresses' }}</td>
                 <td class="pc-mono">{{ listener.process || 'unknown' }}</td>
                 <td>
-                  <template v-for="hint in portIndex.get(listener.port ?? -1) ?? []" :key="hint.id">
-                    <PcStatePill :tone="stateTone(severityTone(hint.severity))" :label="hint.title" :title="hint.detail" />
+                  <template v-if="placementOf(listener).kind === 'public'">
+                    <template v-for="hint in hintsFor(listener)" :key="hint.id">
+                      <PcStatePill :tone="stateTone(severityTone(hint.severity))" :label="hint.title" :title="hint.detail" />
+                    </template>
+                    <span v-if="!hintsFor(listener).length" class="ng-absent">no finding</span>
                   </template>
-                  <span v-if="!(portIndex.get(listener.port ?? -1) ?? []).length" class="ng-absent">no finding</span>
+                  <span v-else-if="placementOf(listener).kind === 'unknown'" class="ng-absent" :title="placementOf(listener).detail">{{ placementOf(listener).label }}</span>
+                  <PcKindChip v-else :title="placementOf(listener).detail">{{ placementOf(listener).label }}</PcKindChip>
                 </td>
               </tr>
             </tbody>

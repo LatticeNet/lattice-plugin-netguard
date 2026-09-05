@@ -47,8 +47,12 @@ import type { PostureRow } from "./posture";
 
 export type Protocol = "tcp" | "udp";
 
-/** Why an internet-reachable port is listed the way it is. */
-export type Verdict = "allowed" | "unexplained";
+/**
+ * Why a port is listed the way it is. "unknown" is a socket whose bind
+ * address the snapshot does not carry: it may be open, and the cell says so
+ * without counting it as either allowed or unexplained.
+ */
+export type Verdict = "allowed" | "unexplained" | "unknown";
 
 export interface Span {
   protocol: Protocol;
@@ -67,6 +71,12 @@ export interface OpenSpan extends Span {
 export interface ConfinedSpan extends Span {
   /** Human labels: "the wireguard zone", "10.7.0.0/24", "closed by policy". */
   scopes: string[];
+  /**
+   * Set when the confinement is the bind itself: the socket sits on an
+   * address that only this zone's interface or CIDRs reach. The cell prints
+   * such a span as a calm chip, the way it prints a knock-gated port.
+   */
+  bindZone?: string;
 }
 
 export type ManagedBy =
@@ -224,12 +234,12 @@ export function isPublicCidr(cidr: string | undefined): boolean {
 
 // ── zones ───────────────────────────────────────────────────────────────────
 
-interface InterfaceFacts {
+export interface InterfaceFacts {
   name: string;
   prefixes: Prefix[];
 }
 
-function indexInterfaces(interfaces: readonly GuardInterface[] | undefined): InterfaceFacts[] {
+export function indexInterfaces(interfaces: readonly GuardInterface[] | undefined): InterfaceFacts[] {
   const out: InterfaceFacts[] = [];
   for (const iface of interfaces ?? []) {
     const name = (iface.name ?? "").trim();
@@ -289,6 +299,14 @@ function zoneForAddress(zones: ReadonlyMap<string, GuardZone>, addr: Addr): stri
   return best;
 }
 
+/** The zones a node resolves against: the overview's, then any the intent carries that it lacks. */
+export function zoneIndex(zones: readonly GuardZone[], intentZones?: readonly GuardZone[]): Map<string, GuardZone> {
+  const index = new Map<string, GuardZone>();
+  for (const zone of zones) index.set(zone.id, zone);
+  for (const zone of intentZones ?? []) if (!index.has(zone.id)) index.set(zone.id, zone);
+  return index;
+}
+
 /** The zone a listener is reachable through, exactly as the server decides it. */
 export function listenerZone(
   listener: GuardListener,
@@ -300,6 +318,76 @@ export function listenerZone(
   if (isLoopback(addr)) return LOOPBACK_ZONE;
   const iface = interfaceFor(addr, interfaces);
   return zoneForInterface(zones, iface) || zoneForAddress(zones, addr) || PUBLIC_ZONE;
+}
+
+// ── bind placement ──────────────────────────────────────────────────────────
+//
+// Where a socket's bind address puts it before any rule runs. The agent's
+// `ss -tulpnH` collector (lattice-node-agent internal/guardreality/collect.go,
+// ParseSSListeners) reads the local-address column into `address` and maps
+// the bare `*` older iproute2 prints for the IPv6 any-address to `::`, so a
+// snapshot from that collector always says where a socket is bound. The
+// field is `omitempty` on the wire (lattice-sdk model.GuardListener), so a
+// report from another collector can arrive without it. That case is placed
+// as "unknown" on purpose: an absent bind is not read as "every address",
+// which is what the server's suggestion engine assumes, and not as local
+// either. Nothing is claimed about where such a socket can be reached from.
+
+export type BindClass = "public" | "zone" | "local" | "unknown";
+
+export interface BindPlacement {
+  kind: BindClass;
+  /** The zone id for "zone". */
+  zoneId?: string;
+  /** The chip text: "public", "tailscale only", "local only", "bind not reported". */
+  label: string;
+  /** The sentence behind the chip. */
+  detail: string;
+}
+
+function describeBind(listener: GuardListener): string {
+  const address = (listener.address ?? "").trim();
+  const protocol = (listener.protocol ?? "").trim().toLowerCase() || "tcp";
+  return `${protocol}/${listener.port ?? "?"} binds ${address}`;
+}
+
+export function bindPlacement(
+  listener: GuardListener,
+  zones: ReadonlyMap<string, GuardZone>,
+  interfaces: readonly InterfaceFacts[],
+): BindPlacement {
+  const address = (listener.address ?? "").trim();
+  if (!address) {
+    return {
+      kind: "unknown",
+      label: "bind not reported",
+      detail: "The snapshot does not say which address this socket is bound to, so nothing here claims where it can be reached from.",
+    };
+  }
+  const addr = parseAddress(address);
+  if (addr && isLoopback(addr)) {
+    return { kind: "local", label: "local only", detail: `${describeBind(listener)}, a loopback address: reachable only from the node itself.` };
+  }
+  const zone = listenerZone(listener, zones, interfaces);
+  if (zone !== PUBLIC_ZONE && zone !== LOOPBACK_ZONE) {
+    const name = zones.get(zone)?.name || zone;
+    const iface = addr ? interfaceFor(addr, interfaces) : "";
+    const through = iface ? `on ${iface}, ` : "";
+    return {
+      kind: "zone",
+      zoneId: zone,
+      label: `${name} only`,
+      detail: `${describeBind(listener)} ${through}inside the ${name} zone: reachable only through that zone, whatever the rules say.`,
+    };
+  }
+  const every = !addr || addr.n === 0n;
+  return {
+    kind: "public",
+    label: "public",
+    detail: every
+      ? `${describeBind(listener)}, the any-address: every interface answers on it, the public one included.`
+      : `${describeBind(listener)}, an address no trusted zone owns: the internet reaches it unless a rule stops it.`,
+  };
 }
 
 // ── rules ───────────────────────────────────────────────────────────────────
@@ -401,11 +489,16 @@ interface Entry {
   kind: "open" | "confined";
   verdict?: Verdict;
   scopes?: string[];
+  bindZone?: string;
 }
 
-/** Higher means more exposed; used when one port is bound on several addresses. */
+/**
+ * Higher means more exposed; used when one port is bound on several
+ * addresses. An unknown bind ranks above a confined one (nothing proves the
+ * confinement covers it) and below an allowed one (that bind is public).
+ */
 function exposureRank(entry: Entry): number {
-  if (entry.kind === "open") return entry.verdict === "unexplained" ? 2 : 1;
+  if (entry.kind === "open") return entry.verdict === "unexplained" ? 3 : entry.verdict === "allowed" ? 2 : 1;
   return 0;
 }
 
@@ -432,8 +525,9 @@ function classify(
 ): Entry | undefined {
   const normalized = normalizeListener(listener);
   if (!normalized) return undefined;
-  const zone = listenerZone(listener, zones, interfaces);
-  if (zone === LOOPBACK_ZONE) return undefined;
+  const placement = bindPlacement(listener, zones, interfaces);
+  // Loopback is the node talking to itself: not exposure, and not listed.
+  if (placement.kind === "local") return undefined;
   const processes = new Set<string>();
   const process = (listener.process ?? "").trim();
   if (process) processes.add(process);
@@ -446,8 +540,14 @@ function classify(
   }
 
   // Bound to an overlay or custom zone address: reachable only through that
-  // interface, whatever the rules say.
-  if (zone !== PUBLIC_ZONE) return { ...base, kind: "confined", scopes: [zoneLabel(zone, zones)] };
+  // zone, whatever the rules say.
+  if (placement.kind === "zone" && placement.zoneId) {
+    const zone = placement.zoneId;
+    return { ...base, kind: "confined", scopes: [zoneLabel(zone, zones)], bindZone: zones.get(zone)?.name || zone };
+  }
+
+  // No bind address in the report: listed, never counted, never a finding.
+  if (placement.kind === "unknown") return { ...base, kind: "open", verdict: "unknown" };
 
   const matches = rules.filter((rule) => ruleCovers(rule, normalized.protocol, normalized.port));
   const scopes = matches.map((rule) => remoteScope(rule.remote, ctx));
@@ -520,9 +620,7 @@ export function computeExposure(
     return { ...base, evidence: "none", open: [], confined: [], unexplained: 0 };
   }
 
-  const zones = new Map<string, GuardZone>();
-  for (const zone of ctx.zones) zones.set(zone.id, zone);
-  for (const zone of row.intent?.zones ?? []) if (!zones.has(zone.id)) zones.set(zone.id, zone);
+  const zones = zoneIndex(ctx.zones, row.intent?.zones);
   const interfaces = indexInterfaces(reality.interfaces);
   const rules = nodeRules(row, ctx);
 
@@ -544,6 +642,9 @@ export function computeExposure(
       byKey.set(key, { ...entry, processes: existing.processes });
     } else if (existing.kind === "confined" && entry.kind === "confined") {
       existing.scopes = [...new Set([...(existing.scopes ?? []), ...(entry.scopes ?? [])])];
+      // Two binds, one of them by zone address and one by rule: the scopes
+      // merge into a sentence and the chip form is given up.
+      if (existing.bindZone !== entry.bindZone) existing.bindZone = undefined;
     }
   }
 
@@ -555,8 +656,8 @@ export function computeExposure(
   );
   const confined = foldSpans<ConfinedSpan>(
     entries.filter((entry) => entry.kind === "confined"),
-    (entry) => `${entry.protocol}:${(entry.scopes ?? []).join("|")}`,
-    (entry, span) => ({ ...span, scopes: entry.scopes ?? [] }),
+    (entry) => `${entry.protocol}:${entry.bindZone ?? ""}:${(entry.scopes ?? []).join("|")}`,
+    (entry, span) => ({ ...span, scopes: entry.scopes ?? [], ...(entry.bindZone ? { bindZone: entry.bindZone } : {}) }),
   );
   const unexplained = open
     .filter((span) => span.verdict === "unexplained")

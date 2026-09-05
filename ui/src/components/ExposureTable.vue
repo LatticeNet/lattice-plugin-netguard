@@ -96,7 +96,12 @@ function findingKey(nodeId: string, span: OpenSpan): string {
 
 function spanTitle(span: OpenSpan): string {
   const owner = formatProcesses(span);
-  const verdict = span.verdict === "allowed" ? "a rule allows it from the internet" : "no rule allows it";
+  const verdict =
+    span.verdict === "allowed"
+      ? "a rule allows it from the internet"
+      : span.verdict === "unknown"
+        ? "the snapshot does not say which address it is bound to, so where it can be reached from is unknown"
+        : "no rule allows it";
   return `${formatSpan(span)}/${span.protocol}${owner ? ` (${owner})` : ""}: ${verdict}`;
 }
 
@@ -237,12 +242,17 @@ function nameStatus(view: ExposureRowView): NameStatus {
                     {{ formatSpan(span) }}<span aria-hidden="true"> (!)</span>
                     <span class="pc-sr-only">, open with no rule allowing it</span>
                   </button>
+                  <span v-else-if="span.verdict === 'unknown'" class="ng-span-unknown" :title="spanTitle(span)">
+                    {{ formatSpan(span) }}<span aria-hidden="true"> (?)</span>
+                    <span class="pc-sr-only">, bind address not reported</span>
+                  </span>
                   <span v-else class="ng-span-allowed" :title="spanTitle(span)">{{ formatSpan(span) }}</span>
                 </template>
               </span>
               <span v-if="view.exposure.confined.length" class="ng-confined">
                 <template v-for="span in view.exposure.confined" :key="'c' + span.protocol + span.from">
                   <PcKindChip v-if="isGated(span)" :title="confinedTitle(span)">{{ formatSpan(span) }} gated</PcKindChip>
+                  <PcKindChip v-else-if="span.bindZone" :title="confinedTitle(span)">{{ formatSpan(span) }} {{ span.bindZone }}</PcKindChip>
                   <span v-else class="ng-confined-item" :title="confinedTitle(span)">{{ formatSpan(span) }}: {{ describeScopes(span.scopes) }}</span>
                 </template>
               </span>

@@ -3,11 +3,13 @@ import { describe, expect, it } from "vitest";
 import {
   allowsPreview,
   applyOrder,
+  bindPlacement,
   compareExposure,
   computeExposure,
   draftRuleFor,
   findingsFor,
   formatSpans,
+  indexInterfaces,
   isPublicCidr,
   matchesGroup,
   matchesZone,
@@ -16,6 +18,7 @@ import {
   ruleSentence,
   settleOrder,
   usedByNodes,
+  zoneIndex,
   type ExposureContext,
 } from "./exposure";
 import type { GuardListener, GuardNode, GuardNodeReality, GuardRule, GuardZone, SecurityGroup } from "./netguardModel";
@@ -225,6 +228,120 @@ describe("computeExposure", () => {
     expect(result.open).toHaveLength(1);
     expect(result.open[0]?.verdict).toBe("unexplained");
     expect(result.confined).toEqual([]);
+  });
+});
+
+// ── where a bind puts a socket: the legend-sg shapes ────────────────────────
+
+/** The tailscale zone as the fleet declares it: interface only, no cidrs. */
+const tailscale: GuardZone = { id: "tailscale", name: "tailscale", interfaces: ["tailscale0"] };
+/** A zone that claims its peers by cidr instead, the way a wg zone lists its peers. */
+const wgPeers: GuardZone = { id: "wg-peers", name: "wg peers", interfaces: [], cidrs: ["10.7.0.0/24", "fd7a:115c:a1e0::/48"] };
+const legendZones = zoneIndex([tailscale, wgPeers, office]);
+const legendInterfaces = indexInterfaces([
+  { name: "eth0", addresses: ["2a14:7dc0:102:10a5::2f/48", "77.93.91.41/24", "fe80::be24:11ff:fe19:479a/64"], up: true },
+  { name: "lo", addresses: ["127.0.0.1/8", "::1/128"], up: true },
+  { name: "tailscale0", addresses: ["100.86.92.48/32", "fd7a:115c:a1e0::cb39:5c30/128", "fe80::b559:cb32:1892:3dfb/64"], up: true },
+]);
+const legendNode = row("legend-sg", {
+  coverage: "observe_only",
+  driftState: "unknown",
+  intent: intent("legend-sg", [ssh], { binding: { node_id: "legend-sg", group_ids: ["ssh"], zone_ids: ["tailscale"], managed: false, version: 1 }, zones: [tailscale] }),
+});
+const legendCtx: ExposureContext = { ...ctx, zones: [tailscale, wgPeers, office] };
+
+describe("bindPlacement", () => {
+  it("places a loopback bind as local, whatever the rules say", () => {
+    for (const address of ["127.0.0.1", "127.0.0.53", "::1"]) {
+      const placement = bindPlacement(listener(8080, address, "sing-box"), legendZones, legendInterfaces);
+      expect(placement.kind, address).toBe("local");
+      expect(placement.label).toBe("local only");
+      expect(placement.detail).toContain("reachable only from the node itself");
+    }
+  });
+
+  it("places a bind on a zone interface address, or inside a zone's cidrs, in that zone", () => {
+    // 100.86.92.48 is tailscale0's own address; the zone is declared by interface.
+    const v4 = bindPlacement(listener(43492, "100.86.92.48", "tailscaled"), legendZones, legendInterfaces);
+    expect(v4).toMatchObject({ kind: "zone", zoneId: "tailscale", label: "tailscale only" });
+    expect(v4.detail).toContain("on tailscale0");
+    // The v6 address is on tailscale0 too, and the interface match wins over the cidr zone.
+    const v6 = bindPlacement(listener(42489, "fd7a:115c:a1e0::cb39:5c30", "tailscaled"), legendZones, legendInterfaces);
+    expect(v6).toMatchObject({ kind: "zone", zoneId: "tailscale" });
+    // An address no reported interface owns still lands in the zone whose cidrs contain it.
+    const peer = bindPlacement(listener(5432, "10.7.0.9", "postgres"), legendZones, []);
+    expect(peer).toMatchObject({ kind: "zone", zoneId: "wg-peers", label: "wg peers only" });
+  });
+
+  it("keeps the any-address and a public interface address public", () => {
+    expect(bindPlacement(listener(22, "0.0.0.0"), legendZones, legendInterfaces)).toMatchObject({ kind: "public", label: "public" });
+    expect(bindPlacement(listener(22, "::"), legendZones, legendInterfaces).kind).toBe("public");
+    expect(bindPlacement(listener(22, "*"), legendZones, legendInterfaces).kind).toBe("public");
+    expect(bindPlacement(listener(443, "77.93.91.41", "nginx"), legendZones, legendInterfaces)).toMatchObject({ kind: "public" });
+  });
+
+  it("leaves a listener whose bind address is not in the report as unknown rather than guessing", () => {
+    const missing: GuardListener = { protocol: "tcp", port: 9000, process: "node" };
+    expect(bindPlacement(missing, legendZones, legendInterfaces)).toMatchObject({ kind: "unknown", label: "bind not reported" });
+    expect(bindPlacement({ ...missing, address: "  " }, legendZones, legendInterfaces).kind).toBe("unknown");
+  });
+});
+
+describe("computeExposure on legend-sg's sockets", () => {
+  const sockets = [
+    listener(22, "0.0.0.0"),
+    listener(22, "::"),
+    listener(8080, "127.0.0.1", "sing-box"),
+    listener(9090, "127.0.0.1", "sing-box"),
+    listener(17891, "::", "sing-box"),
+    listener(42489, "fd7a:115c:a1e0::cb39:5c30", "tailscaled"),
+    listener(43492, "100.86.92.48", "tailscaled"),
+    listener(41641, "0.0.0.0", "tailscaled", "udp"),
+    listener(41641, "::", "tailscaled", "udp"),
+  ];
+  const snapshot: GuardNodeReality = {
+    node_id: "legend-sg",
+    collected_at: "2026-09-05T11:16:35Z",
+    listeners: sockets,
+    interfaces: [
+      { name: "eth0", addresses: ["77.93.91.41/24"], up: true },
+      { name: "lo", addresses: ["127.0.0.1/8", "::1/128"], up: true },
+      { name: "tailscale0", addresses: ["100.86.92.48/32", "fd7a:115c:a1e0::cb39:5c30/128"], up: true },
+    ],
+  };
+
+  it("confines the tailscale-bound sockets to their zone as bind chips and drops the loopback ones", () => {
+    const result = computeExposure(legendNode, snapshot, legendCtx);
+    expect(formatSpans(result.open)).toBe("22, 17891, 41641/udp");
+    expect(result.open.map((span) => span.verdict)).toEqual(["allowed", "unexplained", "unexplained"]);
+    expect(result.confined).toEqual([
+      { protocol: "tcp", from: 42489, to: 42489, processes: ["tailscaled"], scopes: ["the tailscale zone"], bindZone: "tailscale" },
+      { protocol: "tcp", from: 43492, to: 43492, processes: ["tailscaled"], scopes: ["the tailscale zone"], bindZone: "tailscale" },
+    ]);
+    // 8080 and 9090 are the node talking to itself: not open, not confined, not counted.
+    expect(result.unexplained).toBe(2);
+    expect(findingsFor(legendNode, result, legendCtx).map((finding) => finding.span.from)).toEqual([17891, 41641]);
+  });
+
+  it("lists a socket with no bind address as unknown, never as open or as a finding", () => {
+    const blind: GuardListener = { protocol: "tcp", port: 9000, process: "node" };
+    const result = computeExposure(legendNode, { ...snapshot, listeners: [blind, listener(22, "0.0.0.0")] }, legendCtx);
+    expect(result.open).toEqual([
+      { protocol: "tcp", from: 22, to: 22, processes: ["sshd"], verdict: "allowed" },
+      { protocol: "tcp", from: 9000, to: 9000, processes: ["node"], verdict: "unknown" },
+    ]);
+    expect(result.unexplained).toBe(0);
+    expect(findingsFor(legendNode, result, legendCtx)).toEqual([]);
+  });
+
+  it("gives up the chip form when one port is bound by zone address and by a rule-scoped public bind", () => {
+    const rules = [rule({ id: "pg-wg", ports: [{ from: 5432, to: 5432 }], remote: { kind: "zone", zone_id: "office" } })];
+    const node = row("mixed", { coverage: "legacy", driftState: "unknown", intent: intent("mixed", [{ id: "l", name: "legacy", version: 1, source: "legacy", node_id: "mixed", rules }], { source: "legacy", zones: [tailscale] }) });
+    const result = computeExposure(node, { ...snapshot, listeners: [listener(5432, "100.86.92.48", "postgres"), listener(5432, "0.0.0.0", "postgres")] }, legendCtx);
+    expect(result.open).toEqual([]);
+    expect(result.confined).toHaveLength(1);
+    expect(result.confined[0]!.scopes).toEqual(["the tailscale zone", "the Office VPN zone"]);
+    expect(result.confined[0]!.bindZone).toBeUndefined();
   });
 });
 
