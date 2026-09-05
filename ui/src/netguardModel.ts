@@ -203,6 +203,10 @@ export interface RealityDetail {
   reality: GuardNodeReality | null;
   received_at?: string | null;
   stale_after?: string | null;
+  /** True when the report lists the inet lattice_knock table: SSH Guard's gate is on the node. */
+  knock_gate?: boolean;
+  /** The tcp ports that gate covers; absent when the table is there but its scope is not known. */
+  knock_gated_ports?: number[];
 }
 
 /** `reality` called with a node_id answers with the detail under `node`. */
