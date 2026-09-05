@@ -10,8 +10,10 @@
  * The page is built on the shared plugin chassis, in the reading order every
  * plugin frame shares: header and proof line, notices, the stat strip, the
  * toolbar with the lens tabs, then one table card per lens whose rows fold
- * their detail underneath. The look lives in the chassis sheet; this file
- * owns the facts and the flow.
+ * their detail underneath. The toolbar keeps one shape on every lens (tabs,
+ * the search, the note, one primary action) so a control learned on one tab
+ * is where it was on the next. The look lives in the chassis sheet; this
+ * file owns the facts and the flow.
  *
  * Two constraints shape everything below. The frame the host renders this in
  * is a viewport the host sizes itself, so this document is the one scroller
@@ -21,7 +23,7 @@
  * panel at all.
  */
 import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
-import { Boxes, Plus, Radar, RefreshCw, Shield, ShieldCheck } from "@lucide/vue";
+import { Boxes, Plus, Radar, RefreshCw, Shield, ShieldCheck, TriangleAlert } from "@lucide/vue";
 
 import { BridgeClient, canCall, type HostInit } from "@latticenet/plugin-bridge";
 import {
@@ -58,19 +60,25 @@ import NodeDetail from "./components/NodeDetail.vue";
 import ZoneEditor from "./components/ZoneEditor.vue";
 import ZonesTable from "./components/ZonesTable.vue";
 import {
-  compareExposure,
+  applyOrder,
   computeExposure,
   draftRuleFor,
   findingsFor,
   formatProcesses,
+  matchesGroup,
+  matchesZone,
   newestCollectedAt,
+  settleOrder,
+  usedByNodes,
   type ExposureContext,
   type ExposureSortKey,
   type Finding,
   type KnockGate,
+  type OrderIndex,
 } from "./exposure";
 import { countPosture, joinPosture, type PostureRow } from "./posture";
 import {
+  deleteQuestion,
   endSentence,
   safeErrorMessage,
   toWire,
@@ -86,6 +94,7 @@ import {
   type SecurityGroup,
 } from "./netguardModel";
 import { scrollToElement } from "./scrollTo";
+import { statTiles } from "./stats";
 import { ageLabel, clockUtc, stampUtc } from "./time";
 
 const SERVICE = "latticenet.netguard/firewall";
@@ -106,8 +115,8 @@ const DETAIL_CONCURRENCY = 6;
 /** 50 rows is a screen and a half at 40px; the pager takes over past it. */
 const NODE_PAGE_SIZE = 50;
 
-type Lens = "exposure" | "groups" | "zones";
-const LENSES: readonly Lens[] = ["exposure", "groups", "zones"];
+type Lens = "exposure" | "attention" | "groups" | "zones";
+const LENSES: readonly Lens[] = ["exposure", "attention", "groups", "zones"];
 
 const init = ref<HostInit>();
 const overview = ref<Overview>({ nodes: [], groups: [], zones: [] });
@@ -118,6 +127,9 @@ const refreshing = ref(false);
 const error = ref("");
 const notice = ref("");
 const bootError = ref("");
+/** Which of the two reads the last refresh lost, so the stat strip can say so. */
+const overviewFailed = ref(false);
+const realityFailed = ref(false);
 
 /* The plugin document's own query string can open a lens, a search or a node,
  * so a host, a reviewer or an agent can deep-link a state (`?lens=groups`,
@@ -267,17 +279,23 @@ async function refresh(background = false): Promise<void> {
   else loading.value = true;
   error.value = "";
   const failures: string[] = [];
+  let lostOverview = false;
+  let lostReality = false;
   try {
     overview.value = await call<Overview>("overview");
   } catch (cause) {
+    lostOverview = true;
     failures.push(safeErrorMessage(cause, "The NetGuard overview could not be loaded"));
   }
   try {
     await loadReality();
   } catch (cause) {
+    lostReality = true;
     failures.push(safeErrorMessage(cause, "Reality snapshots could not be loaded"));
   }
   if (epoch !== refreshEpoch) return;
+  overviewFailed.value = lostOverview;
+  realityFailed.value = lostReality;
   // Partial failure is reported as partial, never rounded up to a working
   // panel: half this surface is intent and half is evidence, and a fleet
   // rendered from one of them alone is misleading. One failure per line.
@@ -287,7 +305,12 @@ async function refresh(background = false): Promise<void> {
   refreshing.value = false;
   // A node opened by URL needs its review the same way a clicked one does.
   if (!background) for (const nodeId of expanded.keys.value) void loadReviewFor(nodeId);
+  // The order is settled twice per refresh: once on what the list alone knows
+  // (drift, name), then once more when every snapshot has landed. In between
+  // the rows hold still.
+  settle();
   await loadDetails(epoch);
+  if (epoch === refreshEpoch) settle();
 }
 
 // ── the exposure lens ───────────────────────────────────────────────────────
@@ -315,14 +338,26 @@ const views = computed<ExposureRowView[]>(() =>
 
 const sortKey = ref<ExposureSortKey>("attention");
 const sortDirection = ref<"asc" | "desc">("asc");
+/**
+ * The settled display order. Rows are read through it rather than sorted
+ * live, because the default order ranks by unexplained ports and every node
+ * reports 0 of those until its own snapshot read returns: a live sort moves
+ * the row under the pointer for the first seconds after load.
+ */
+const order = ref<OrderIndex>(new Map());
+
+function settle(): void {
+  order.value = settleOrder(views.value, sortKey.value, sortDirection.value);
+}
 
 function onSort(key: ExposureSortKey): void {
   if (sortKey.value === key) {
     sortDirection.value = sortDirection.value === "asc" ? "desc" : "asc";
-    return;
+  } else {
+    sortKey.value = key;
+    sortDirection.value = "asc";
   }
-  sortKey.value = key;
-  sortDirection.value = "asc";
+  settle();
 }
 
 /** Node, id, group and zone ids, group names and the open ports themselves. */
@@ -339,14 +374,22 @@ function matchesSearch(view: ExposureRowView, needle: string): boolean {
 }
 
 const searching = computed(() => search.value.trim().length > 0);
+const needle = computed(() => search.value.trim().toLowerCase());
 const matchedViews = computed(() => {
-  const needle = search.value.trim().toLowerCase();
-  const matched = needle ? views.value.filter((view) => matchesSearch(view, needle)) : [...views.value];
-  const factor = sortDirection.value === "desc" ? -1 : 1;
-  return matched.sort(
-    (a, b) => compareExposure(a, b, sortKey.value) * factor || a.row.nodeId.localeCompare(b.row.nodeId),
-  );
+  const matched = needle.value ? views.value.filter((view) => matchesSearch(view, needle.value)) : views.value;
+  return applyOrder(matched, order.value);
 });
+
+/* The same search field narrows every lens. On Groups a hit inside a rule
+ * opens the group while the search stands, because the operator asked for
+ * the rule, not the group; clearing the search restores their own set. */
+const groupHits = computed(() => new Map(overview.value.groups.map((group) => [group.id, matchesGroup(group, exposureContext.value, needle.value)])));
+const matchedGroups = computed(() => (needle.value ? overview.value.groups.filter((group) => groupHits.value.get(group.id)?.hit) : overview.value.groups));
+const matchedZones = computed(() => (needle.value ? overview.value.zones.filter((zone) => matchesZone(zone, needle.value)) : overview.value.zones));
+
+function groupOpen(groupId: string): boolean {
+  return groupsOpen.isOpen(groupId) || (needle.value.length > 0 && groupHits.value.get(groupId)?.inRules === true);
+}
 
 const page = ref(1);
 const pageCount = computed(() => Math.max(1, Math.ceil(matchedViews.value.length / NODE_PAGE_SIZE)));
@@ -410,9 +453,11 @@ function toggleFinding(key: string): void {
   if (finding) void ensureReview(finding.nodeId);
 }
 
+/** From a red port in the exposure cell to its row on the Attention lens. */
 async function focusFinding(key: string): Promise<void> {
   ignored.value.delete(key);
   if (!expandedFindings.value.has(key)) toggleFinding(key);
+  lens.value = "attention";
   await nextTick();
   scrollToElement(document.getElementById(`finding-${key}`));
 }
@@ -602,13 +647,16 @@ async function adopt(nodeId: string): Promise<void> {
 
 // ── delete ──────────────────────────────────────────────────────────────────
 
-const deleteTarget = ref<{ type: "group" | "zone"; id: string; label: string }>();
+const deleteTarget = ref<{ type: "group" | "zone"; id: string; label: string; usedBy: number }>();
 const deleteError = ref("");
 const deleting = ref(false);
 
 function askDelete(type: "group" | "zone", id: string, label: string): void {
   deleteError.value = "";
-  deleteTarget.value = { type, id, label };
+  // The count the row showed a moment ago, carried into the question, since
+  // the modal covers the row.
+  const usedBy = usedByNodes(overview.value.nodes, type === "group" ? "group_ids" : "zone_ids", id);
+  deleteTarget.value = { type, id, label, usedBy };
 }
 
 function cancelDelete(): void {
@@ -706,18 +754,31 @@ function plural(count: number, one: string, many: string): string {
 
 const permissionNote = computed(() => {
   if (loading.value || bootError.value || canAdmin.value) return "";
-  if (lens.value === "groups") return "read-only: netguard:admin is needed to create or edit a group";
   if (lens.value === "zones") return "read-only: netguard:admin is needed to create or edit a zone";
-  return "";
+  return "read-only: netguard:admin is needed to create or edit a group";
 });
 
-const driftNote = computed(() =>
-  counts.value.drifted
-    ? "live table differs from what Lattice applied"
-    : `${counts.value.inSync} in sync · ${counts.value.driftUnknown} unknown`,
-);
-const staleNote = computed(() =>
-  counts.value.stale ? "snapshot older than the server trusts" : `${counts.value.fresh} fresh · ${counts.value.neverReported} never reported`,
+/* One search field, one place, on every lens; only its placeholder and the
+ * match note change with the lens. */
+const searchPlaceholder = computed(() => {
+  if (lens.value === "groups") return "Search by group, rule port, remote or comment";
+  if (lens.value === "zones") return "Search by zone, interface or CIDR";
+  return "Search by node, group, zone, port or process";
+});
+const searchLabel = computed(() => (lens.value === "groups" ? "Search groups" : lens.value === "zones" ? "Search zones" : "Search nodes"));
+const matchNote = computed(() => {
+  if (!searching.value || loading.value || bootError.value) return "";
+  if (lens.value === "groups") return `${matchedGroups.value.length} of ${plural(overview.value.groups.length, "group", "groups")} match`;
+  if (lens.value === "zones") return `${matchedZones.value.length} of ${plural(overview.value.zones.length, "zone", "zones")} match`;
+  return `${matchedViews.value.length} of ${counts.value.total} ${nodesWord(counts.value.total)} match`;
+});
+/** The one creating verb per lens: a group on Exposure and Attention (a finding resolves into a rule), a zone on Zones. */
+const primaryVerb = computed<"group" | "zone">(() => (lens.value === "zones" ? "zone" : "group"));
+
+/* The strip says "unknown" for a tile whose read failed, never the zero an
+ * empty join produces. */
+const tiles = computed(() =>
+  statTiles(counts.value, { overviewFailed: overviewFailed.value, realityFailed: realityFailed.value, canSeeReality: canSeeReality.value }),
 );
 </script>
 
@@ -755,18 +816,17 @@ const staleNote = computed(() =>
 
     <PcSkeleton v-if="loading" variant="strip" :count="5" label="Loading the firewall summary" />
     <PcStatStrip v-else-if="!bootError" :count="5" label="Fleet summary">
-      <PcStatCard label="Nodes" :value="counts.total" :note="`${counts.fresh} reporting · ${plural(counts.legacy, 'legacy baseline', 'legacy baselines')} · ${counts.unbound} unbound`" />
-      <PcStatCard label="Managed" :value="counts.managed" note="under NetGuard authority" />
-      <PcStatCard label="Observe only" :value="counts.observeOnly" tone="neutral" note="visible, nothing enforced" />
-      <PcStatCard label="Drift" :value="counts.drifted" :tone="counts.drifted ? 'error' : undefined" :note="driftNote" />
-      <PcStatCard label="Stale" :value="counts.stale" :tone="counts.stale ? 'warning' : undefined" :note="staleNote" />
+      <PcStatCard v-for="tile in tiles" :key="tile.label" :label="tile.label" :value="tile.value" :tone="tile.tone" :note="tile.note" :data-unknown="tile.unknown ? 'true' : undefined" />
     </PcStatStrip>
 
     <PcToolbar label="NetGuard toolbar">
       <template #tabs>
         <PcLensTabs v-model="lens" label="NetGuard lens">
-          <PcLensTab value="exposure" label="Exposure" :count="findingsCount" count-tone="error">
+          <PcLensTab value="exposure" label="Exposure">
             <template #icon><Shield :size="14" /></template>
+          </PcLensTab>
+          <PcLensTab value="attention" label="Attention" :count="findingsCount" count-tone="error">
+            <template #icon><TriangleAlert :size="14" /></template>
           </PcLensTab>
           <PcLensTab value="groups" label="Groups" :count="loading || bootError ? null : overview.groups.length">
             <template #icon><Boxes :size="14" /></template>
@@ -776,18 +836,14 @@ const staleNote = computed(() =>
           </PcLensTab>
         </PcLensTabs>
       </template>
-      <template v-if="lens === 'exposure'" #search>
-        <PcSearchField v-model="search" label="Search nodes" placeholder="Search by node, group, zone, port or process" />
+      <template #search>
+        <PcSearchField v-model="search" :label="searchLabel" :placeholder="searchPlaceholder" />
       </template>
-      <template v-if="lens === 'exposure' && searching && !loading" #note>
-        {{ matchedViews.length }} of {{ counts.total }} {{ nodesWord(counts.total) }} match
-      </template>
+      <template v-if="matchNote" #note>{{ matchNote }}</template>
       <template v-else-if="permissionNote" #note>{{ permissionNote }}</template>
-      <template v-if="lens === 'groups' && canAdmin && !loading" #primary>
-        <PcButton variant="primary" @click="openGroup()"><template #icon><Plus :size="15" /></template>New group</PcButton>
-      </template>
-      <template v-else-if="lens === 'zones' && canAdmin && !loading" #primary>
-        <PcButton variant="primary" @click="openZone()"><template #icon><Plus :size="15" /></template>New zone</PcButton>
+      <template v-if="canAdmin && !loading" #primary>
+        <PcButton v-if="primaryVerb === 'zone'" variant="primary" @click="openZone()"><template #icon><Plus :size="15" /></template>New zone</PcButton>
+        <PcButton v-else variant="primary" @click="openGroup()"><template #icon><Plus :size="15" /></template>New group</PcButton>
       </template>
     </PcToolbar>
 
@@ -803,102 +859,113 @@ const staleNote = computed(() =>
       <PcSkeleton :count="8" label="Loading firewall state" />
     </PcPanel>
 
-    <template v-else-if="lens === 'exposure'">
-      <PcPanel id="pc-panel-exposure" role="tabpanel" aria-labelledby="pc-tab-exposure">
-        <PcPanelHeader title="Exposure" description="What each node actually has open to the internet, against what you declared. A row folds the node's evidence and its generated ruleset underneath.">
-          <PcCount :value="`${plural(counts.total, 'node', 'nodes')}${findings.length ? ` · ${plural(findings.length, 'finding', 'findings')}` : ''}`" />
-        </PcPanelHeader>
+    <PcPanel v-else-if="lens === 'exposure'" id="pc-panel-exposure" role="tabpanel" aria-labelledby="pc-tab-exposure">
+      <PcPanelHeader title="Exposure" description="What each node actually has open to the internet, against what you declared. A row folds the node's evidence and its generated ruleset underneath; a red port opens its finding on the Attention lens.">
+        <PcCount :value="`${plural(counts.total, 'node', 'nodes')}${findings.length ? ` · ${plural(findings.length, 'finding', 'findings')}` : ''}`" />
+      </PcPanelHeader>
 
-        <PcEmptyState v-if="error && !posture.length" kind="error" title="Nothing could be loaded">
-          <p>This is not an empty fleet, it is an unanswered question.</p>
-          <p class="ng-pre-line">{{ error }}</p>
-          <template #actions><PcButton :busy="refreshing" @click="refresh(true)">Try again</PcButton></template>
-        </PcEmptyState>
-        <PcEmptyState v-else-if="!posture.length" title="No nodes are visible">
-          <template #icon><Radar :size="26" /></template>
-          <p>This session can see no nodes at all. A node appears here once its agent reports, or once it is bound to a security group.</p>
-        </PcEmptyState>
-        <PcEmptyState v-else-if="!matchedViews.length" kind="no-match" title="No node matches that search">
-          <template #icon><Radar :size="26" /></template>
-          <p>Nothing in {{ plural(counts.total, 'node', 'nodes') }} matches <span class="pc-mono">{{ search.trim() }}</span>. The search covers node name and id, group and zone ids, group names, open ports and their owning process.</p>
-          <template #actions><PcButton @click="search = ''">Clear the search</PcButton></template>
-        </PcEmptyState>
+      <PcEmptyState v-if="error && !posture.length" kind="error" title="Nothing could be loaded">
+        <p>This is not an empty fleet, it is an unanswered question.</p>
+        <p class="ng-pre-line">{{ error }}</p>
+        <template #actions><PcButton :busy="refreshing" @click="refresh(true)">Try again</PcButton></template>
+      </PcEmptyState>
+      <PcEmptyState v-else-if="!posture.length" title="No nodes are visible">
+        <template #icon><Radar :size="26" /></template>
+        <p>This session can see no nodes at all. A node appears here once its agent reports, or once it is bound to a security group.</p>
+      </PcEmptyState>
+      <PcEmptyState v-else-if="!matchedViews.length" kind="no-match" title="No node matches that search">
+        <template #icon><Radar :size="26" /></template>
+        <p>Nothing in {{ plural(counts.total, 'node', 'nodes') }} matches <span class="pc-mono">{{ search.trim() }}</span>. The search covers node name and id, group and zone ids, group names, open ports and their owning process.</p>
+        <template #actions><PcButton @click="search = ''">Clear the search</PcButton></template>
+      </PcEmptyState>
 
-        <ExposureTable
-          v-else
-          :rows="pageViews"
-          :sort-key="sortKey"
-          :sort-direction="sortDirection"
-          :is-open="expanded.isOpen"
-          :ignored="ignored"
-          :observed-at="observedAt"
-          :can-see-reality="canSeeReality"
-          @sort="onSort"
-          @toggle="toggleNode"
-          @finding="focusFinding"
-        >
-          <template #detail="{ view }">
-            <NodeDetail
-              :row="view.row"
-              :review="reviews.get(view.row.nodeId)"
-              :loading="reviewLoading.has(view.row.nodeId)"
-              :review-error="reviewErrorFor(view.row.nodeId)"
-              :findings="findingsForNode(view.row.nodeId)"
-              :ignored="ignored"
-              :can-admin="canAdmin"
-              :can-plan="canPlan"
-              @edit-binding="openBinding(view.row.nodeId)"
-              @plan="openApply(view.row.nodeId)"
-              @adopt="adopt(view.row.nodeId)"
-              @add="addToGroup"
-              @ignore="ignoreFinding"
-              @restore="restoreFinding"
-            />
-          </template>
-        </ExposureTable>
-
-        <PcPagination
-          v-if="pageCount > 1"
-          v-model:page="page"
-          :pages="pageCount"
-          :from="pageStart + 1"
-          :to="Math.min(pageStart + NODE_PAGE_SIZE, matchedViews.length)"
-          :total="matchedViews.length"
-          noun="Nodes"
-          label="Exposure pagination"
-        />
-      </PcPanel>
-
-      <ExposureFindings
-        :findings="findings"
-        :expanded="expandedFindings"
+      <ExposureTable
+        v-else
+        :rows="pageViews"
+        :sort-key="sortKey"
+        :sort-direction="sortDirection"
+        :is-open="expanded.isOpen"
         :ignored="ignored"
-        :reviews="reviews"
-        :review-loading="reviewLoading"
-        :review-errors="reviewErrors"
-        :can-admin="canAdmin"
-        @toggle="toggleFinding"
-        @add="addToGroup"
-        @ignore="ignoreFinding"
-        @restore="restoreFinding"
+        :observed-at="observedAt"
+        :can-see-reality="canSeeReality"
+        @sort="onSort"
+        @toggle="toggleNode"
+        @finding="focusFinding"
+      >
+        <template #detail="{ view }">
+          <NodeDetail
+            :row="view.row"
+            :review="reviews.get(view.row.nodeId)"
+            :loading="reviewLoading.has(view.row.nodeId)"
+            :review-error="reviewErrorFor(view.row.nodeId)"
+            :findings="findingsForNode(view.row.nodeId)"
+            :ignored="ignored"
+            :can-admin="canAdmin"
+            :can-plan="canPlan"
+            @edit-binding="openBinding(view.row.nodeId)"
+            @plan="openApply(view.row.nodeId)"
+            @adopt="adopt(view.row.nodeId)"
+            @add="addToGroup"
+            @ignore="ignoreFinding"
+            @restore="restoreFinding"
+          />
+        </template>
+      </ExposureTable>
+
+      <PcPagination
+        v-if="pageCount > 1"
+        v-model:page="page"
+        :pages="pageCount"
+        :from="pageStart + 1"
+        :to="Math.min(pageStart + NODE_PAGE_SIZE, matchedViews.length)"
+        :total="matchedViews.length"
+        noun="Nodes"
+        label="Exposure pagination"
       />
-    </template>
+    </PcPanel>
+
+    <ExposureFindings
+      v-else-if="lens === 'attention'"
+      id="pc-panel-attention"
+      role="tabpanel"
+      aria-labelledby="pc-tab-attention"
+      :findings="findings"
+      :expanded="expandedFindings"
+      :ignored="ignored"
+      :reviews="reviews"
+      :review-loading="reviewLoading"
+      :review-errors="reviewErrors"
+      :can-admin="canAdmin"
+      :can-see-reality="canSeeReality"
+      :reading="detailProgress"
+      :searching="searching"
+      :nodes="matchedViews.length"
+      @toggle="toggleFinding"
+      @add="addToGroup"
+      @ignore="ignoreFinding"
+      @restore="restoreFinding"
+    />
 
     <PcPanel v-else-if="lens === 'groups'" id="pc-panel-groups" role="tabpanel" aria-labelledby="pc-tab-groups">
       <PcPanelHeader title="Security groups" description="Ordered rules, attached to one or more nodes. The chain policy stays default drop, so anything no rule accepts is dropped. A group folds its rules underneath.">
         <PcCount :value="plural(overview.groups.length, 'group', 'groups')" />
       </PcPanelHeader>
       <GroupsTable
-        v-if="overview.groups.length"
-        :groups="overview.groups"
+        v-if="matchedGroups.length"
+        :groups="matchedGroups"
         :nodes="overview.nodes"
         :context="exposureContext"
-        :is-open="groupsOpen.isOpen"
+        :is-open="groupOpen"
         :can-admin="canAdmin"
         @toggle="groupsOpen.toggle"
         @edit="openGroup"
         @delete="(group) => askDelete('group', group.id, group.name)"
       />
+      <PcEmptyState v-else-if="overview.groups.length" kind="no-match" title="No group matches that search">
+        <template #icon><Boxes :size="26" /></template>
+        <p>Nothing in {{ plural(overview.groups.length, 'group', 'groups') }} matches <span class="pc-mono">{{ search.trim() }}</span>. The search covers group name, id and description, and each rule's sentence and comment.</p>
+        <template #actions><PcButton @click="search = ''">Clear the search</PcButton></template>
+      </PcEmptyState>
       <PcEmptyState v-else title="No security groups">
         <template #icon><Boxes :size="26" /></template>
         <p>A group is a reusable, ordered rule set. Create one, then attach it to a managed node in that node's binding.</p>
@@ -913,13 +980,18 @@ const staleNote = computed(() =>
         <PcCount :value="plural(overview.zones.length, 'zone', 'zones')" />
       </PcPanelHeader>
       <ZonesTable
-        v-if="overview.zones.length"
-        :zones="overview.zones"
+        v-if="matchedZones.length"
+        :zones="matchedZones"
         :nodes="overview.nodes"
         :can-admin="canAdmin"
         @edit="openZone"
         @delete="(zone) => askDelete('zone', zone.id, zone.name)"
       />
+      <PcEmptyState v-else-if="overview.zones.length" kind="no-match" title="No zone matches that search">
+        <template #icon><ShieldCheck :size="26" /></template>
+        <p>Nothing in {{ plural(overview.zones.length, 'zone', 'zones') }} matches <span class="pc-mono">{{ search.trim() }}</span>. The search covers zone name, id and description, interfaces and CIDRs.</p>
+        <template #actions><PcButton @click="search = ''">Clear the search</PcButton></template>
+      </PcEmptyState>
       <PcEmptyState v-else title="No trusted zones">
         <template #icon><ShieldCheck :size="26" /></template>
         <p>A zone names the interfaces and CIDRs a node accepts before any security group runs. Create one to keep a management path open, then attach it in a node's binding.</p>
@@ -980,10 +1052,7 @@ const staleNote = computed(() =>
       @cancel="cancelDelete"
     >
       <div class="ng-stack">
-        <p>
-          This removes <strong>{{ deleteTarget?.label }}</strong> from NetGuard. Nodes that still
-          reference it keep their current rules until they are planned again.
-        </p>
+        <p>{{ deleteTarget ? deleteQuestion(deleteTarget.type, deleteTarget.label, deleteTarget.usedBy) : '' }}</p>
         <PcNotice v-if="deleteError"><p>{{ deleteError }}</p></PcNotice>
       </div>
     </PcConfirmDialog>

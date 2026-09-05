@@ -25,6 +25,7 @@ import {
   type PostureRow,
 } from "../posture";
 import { endSentence, orderListeners, severityTone, suggestionsByPort, type Review } from "../netguardModel";
+import { stampUtc } from "../time";
 import { stateTone } from "../tones";
 
 const props = defineProps<{
@@ -157,7 +158,7 @@ function lintTone(severity: string): "error" | "warning" {
           </p>
           <dl class="ng-kv">
             <dt>Collected</dt>
-            <dd>{{ row.collectedAt ? new Date(row.collectedAt).toLocaleString() : 'never' }}</dd>
+            <dd class="pc-mono">{{ row.collectedAt ? stampUtc(row.collectedAt) : 'never' }}</dd>
             <dt>nft version</dt>
             <dd class="pc-mono">{{ reality?.nft_version || 'not reported' }}</dd>
             <dt>Interfaces</dt>
@@ -174,7 +175,7 @@ function lintTone(severity: string): "error" | "warning" {
             <dd>{{ row.zoneIds.length ? row.zoneIds.join(', ') : 'none' }}</dd>
             <dt>Last apply</dt>
             <dd v-if="row.lastError" class="pc-danger-text">{{ row.lastError }}</dd>
-            <dd v-else-if="row.lastAppliedAt">{{ new Date(row.lastAppliedAt).toLocaleString() }}</dd>
+            <dd v-else-if="row.lastAppliedAt" class="pc-mono">{{ stampUtc(row.lastAppliedAt) }}</dd>
             <dd v-else class="ng-subtle">Lattice has never applied a ruleset to this node.</dd>
           </dl>
         </article>

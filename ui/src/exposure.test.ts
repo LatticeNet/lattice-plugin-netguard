@@ -2,15 +2,19 @@ import { describe, expect, it } from "vitest";
 
 import {
   allowsPreview,
+  applyOrder,
   compareExposure,
   computeExposure,
   draftRuleFor,
   findingsFor,
   formatSpans,
   isPublicCidr,
+  matchesGroup,
+  matchesZone,
   newestCollectedAt,
   parseAddress,
   ruleSentence,
+  settleOrder,
   usedByNodes,
   type ExposureContext,
 } from "./exposure";
@@ -310,5 +314,61 @@ describe("ordering", () => {
   it("finds the newest snapshot for the proof line", () => {
     expect(newestCollectedAt([row("a", { collectedAt: "2026-09-02T03:50:00Z" }), row("b", { collectedAt: "2026-09-02T03:52:10Z" }), row("c", { collectedAt: undefined })])).toBe("2026-09-02T03:52:10Z");
     expect(newestCollectedAt([])).toBeUndefined();
+  });
+});
+
+describe("settled order", () => {
+  // The per-node snapshot reads stream in after the list paints, and every
+  // node's unexplained count is 0 until its own read returns. A live sort
+  // moves the row under the pointer for the first seconds after load; the
+  // page settles the order at known points and reads through the index.
+  // Three unbound nodes with no drift verdict, so the default order can only
+  // come from unexplained ports and then the name.
+  const unbound = { coverage: "unbound", driftState: "unknown" } as const;
+  const quiet = { row: row("b-quiet", unbound), exposure: computeExposure(row("b-quiet", unbound), reality([]), ctx) };
+  const pending = { row: row("c-pending", unbound), exposure: computeExposure(row("c-pending", unbound), undefined, ctx) };
+  const loud = { row: row("a-loud", unbound), exposure: computeExposure(row("a-loud", unbound), reality([listener(8080)]), ctx) };
+
+  it("holds a row where it was settled even after its detail arrives", () => {
+    const beforeDetails = settleOrder([quiet, pending, loud], "attention", "asc");
+    expect([...beforeDetails.keys()]).toEqual(["a-loud", "b-quiet", "c-pending"]);
+
+    // c-pending's snapshot lands and it turns out to be the loudest node.
+    const landed = { ...pending, exposure: computeExposure(pending.row, reality([listener(5432), listener(8080)]), ctx) };
+    expect(landed.exposure.unexplained).toBeGreaterThan(loud.exposure.unexplained);
+    expect(applyOrder([quiet, landed, loud], beforeDetails).map((view) => view.row.nodeId)).toEqual(["a-loud", "b-quiet", "c-pending"]);
+
+    // Once the fan-in completes the page settles again and it moves up.
+    const afterDetails = settleOrder([quiet, landed, loud], "attention", "asc");
+    expect(applyOrder([quiet, landed, loud], afterDetails).map((view) => view.row.nodeId)).toEqual(["c-pending", "a-loud", "b-quiet"]);
+  });
+
+  it("keeps a filtered subset in settled order and appends nodes the index has not seen by name", () => {
+    const order = settleOrder([quiet, pending, loud], "name", "desc");
+    expect([...order.keys()]).toEqual(["c-pending", "b-quiet", "a-loud"]);
+    expect(applyOrder([loud, quiet], order).map((view) => view.row.nodeId)).toEqual(["b-quiet", "a-loud"]);
+    const newcomer = { row: row("d-new"), exposure: computeExposure(row("d-new"), reality([]), ctx) };
+    const another = { row: row("aa-new"), exposure: computeExposure(row("aa-new"), reality([]), ctx) };
+    expect(applyOrder([newcomer, loud, another, quiet], order).map((view) => view.row.nodeId)).toEqual(["b-quiet", "a-loud", "aa-new", "d-new"]);
+  });
+});
+
+describe("search across the lenses", () => {
+  const groupWithComment: SecurityGroup = { ...relay, rules: [rule({ id: "hy2", protocol: "udp", ports: [{ from: 36712, to: 36712 }], comment: "Hysteria2" })] };
+
+  it("matches a group by name, id, rule sentence or comment and says when the hit is in a rule", () => {
+    expect(matchesGroup(ssh, ctx, "ssh")).toEqual({ hit: true, inRules: false });
+    expect(matchesGroup(dbWg, ctx, "5432")).toEqual({ hit: true, inRules: true });
+    expect(matchesGroup(dbWg, ctx, "wg")).toEqual({ hit: true, inRules: true });
+    expect(matchesGroup(groupWithComment, ctx, "hysteria")).toEqual({ hit: true, inRules: true });
+    expect(matchesGroup(ssh, ctx, "postgres")).toEqual({ hit: false, inRules: false });
+  });
+
+  it("matches a zone by name, id, interface, cidr or description", () => {
+    expect(matchesZone(wg, "wg0")).toBe(true);
+    expect(matchesZone(wg, "10.7")).toBe(true);
+    expect(matchesZone(office, "office vpn")).toBe(true);
+    expect(matchesZone({ ...office, description: "The office concentrator" }, "concentrator")).toBe(true);
+    expect(matchesZone(wg, "tailscale")).toBe(false);
   });
 });

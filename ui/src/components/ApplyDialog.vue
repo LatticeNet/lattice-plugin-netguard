@@ -7,7 +7,9 @@
  * confirmation that restates the node name and, when the plan would remove the
  * operator's own shell path, requires the lockout risk to be accepted
  * explicitly. The two steps exist because a single button next to a diff gets
- * pressed while reading the diff.
+ * pressed while reading the diff. Both primaries name what they lead to: the
+ * first says "Create approval" with the ellipsis that promises one more step,
+ * the second says it in full with the node name; neither says "Continue".
  *
  * Neither the scrim nor Escape closes the dialog while a plan is in flight,
  * because a half-sent write must not lose its error message.
@@ -160,7 +162,7 @@ function close(): void {
 
     <template #footer>
       <PcButton :disabled="planning" @click="close">Cancel</PcButton>
-      <PcButton v-if="step === 1" variant="primary" :disabled="Boolean(compileError)" @click="step = 2">Continue</PcButton>
+      <PcButton v-if="step === 1" variant="primary" :disabled="Boolean(compileError)" title="Go to the confirmation step. Nothing is sent to the node yet." @click="step = 2">Create approval…</PcButton>
       <template v-else>
         <PcButton :disabled="planning" @click="step = 1">Back to the diff</PcButton>
         <PcButton variant="danger" :disabled="!confirmSatisfied" :busy="planning" @click="emit('confirm', acceptLockoutRisk)">

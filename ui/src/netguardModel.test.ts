@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildRemote,
+  deleteQuestion,
   driftTone,
   endSentence,
   formatRanges,
@@ -122,5 +123,19 @@ describe("endSentence", () => {
     expect(endSentence("upstream refused firewall/reality: 503 service unavailable")).toBe("upstream refused firewall/reality: 503 service unavailable.");
     expect(endSentence("node has no managed binding.")).toBe("node has no managed binding.");
     expect(endSentence("  ")).toBe("");
+  });
+});
+
+describe("deleteQuestion", () => {
+  it("names the blast radius of a delete", () => {
+    // The modal covers the table, so the "used by" count is off screen at the
+    // moment the operator decides; the question carries it.
+    expect(deleteQuestion("group", "ssh", 28)).toBe(
+      "This removes the security group ssh from NetGuard. 28 nodes still reference it; each keeps its current rules until it is planned again.",
+    );
+    expect(deleteQuestion("group", "web", 1)).toBe(
+      "This removes the security group web from NetGuard. 1 node still references it; it keeps its current rules until it is planned again.",
+    );
+    expect(deleteQuestion("zone", "Office VPN", 0)).toBe("This removes the trusted zone Office VPN from NetGuard. No node references it.");
   });
 });

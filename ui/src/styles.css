@@ -78,21 +78,43 @@ ul {
   gap: var(--space-3);
 }
 
+/* ── toolbar ─────────────────────────────────────────────────────────────── */
+
+/* Four tabs, the search at its 420px ceiling and the primary action do not
+   quite fit a 1024 frame side by side, and a wrapping flex line places the
+   search at its ceiling first and drops the button under it alone. Giving
+   the search a 240px basis that grows to the ceiling keeps the one-line
+   shape down to the 620px column form, where the chassis stacks the toolbar
+   (the rule stops there: in a column, a basis would set the height). This
+   belongs in the chassis sheet once the four pages agree on it. */
+@media (min-width: 621px) {
+  .pc-toolbar > .pc-search {
+    flex: 1 1 240px;
+  }
+}
+
 /* ── exposure cell ───────────────────────────────────────────────────────── */
 
 /* The port list is mono and stays on one line: a wrapped value breaks the row
    rhythm, the title carries the whole sentence, and the detail under the row
-   lists every listener. */
+   lists every listener. Width 0 with a 220px floor, so the list contributes
+   only the floor to the column's intrinsic width and the table can shrink to
+   a 1024 frame; the column's share above the floor comes from the header's
+   percentage width, and the list then fills whatever the column was given. */
 .ng-exposure {
   display: block;
-  min-width: 220px;
-  max-width: 440px;
+  width: 0;
+  min-width: max(100%, 220px);
   overflow: hidden;
   font-family: var(--font-mono);
   font-size: var(--text-mono);
   font-variant-numeric: tabular-nums;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.ng-th-exposure {
+  width: 36%;
 }
 
 .ng-exposure .ng-absent,
@@ -157,13 +179,26 @@ ul {
   font-family: var(--font-mono);
 }
 
+/* The SEEN cell holds "30s ago" over "stale". The chassis gives a cell's
+   small line a 126px floor, which is right for a sentence and here costs the
+   width that keeps the six exposure columns inside a 1024 frame. */
+.pc-table td[data-label="Seen"] small {
+  min-width: max(100%, 48px);
+}
+
 /* ── rules under a group ─────────────────────────────────────────────────── */
 
+/* width 0 and min-width 100%: the sentence contributes nothing to the name
+   column's intrinsic width, so opening a group cannot widen the column and
+   drag RULES, USED BY, SOURCE and ACTIONS sideways; the line then fills
+   whatever width the group rows gave the column and ellipsises inside it.
+   The chassis uses the same trick for a cell's `small` line. */
 .ng-rule-line {
   display: flex;
+  width: 0;
+  min-width: 100%;
   align-items: center;
   gap: var(--space-2);
-  min-width: 0;
 }
 
 .ng-rule-index {
@@ -696,8 +731,7 @@ ul {
 
 @media (max-width: 720px) {
   .ng-exposure {
-    min-width: 0;
-    max-width: 260px;
+    min-width: max(100%, 180px);
   }
 
   .ng-attn-row {
@@ -713,7 +747,8 @@ ul {
 /* In the stacked row the exposure cell is a full-width line and may wrap:
    the sideways scroll is gone, so the ports have to be readable in place. */
 .pc-table[data-stacked="true"] .ng-exposure {
-  max-width: none;
+  width: auto;
+  min-width: 0;
   overflow: visible;
   white-space: normal;
   overflow-wrap: anywhere;

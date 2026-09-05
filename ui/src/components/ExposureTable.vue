@@ -170,10 +170,14 @@ function nameStatus(view: ExposureRowView): NameStatus {
 </script>
 
 <template>
-  <PcTable :min-width="1000" label="Exposure by node">
+  <!-- 880, not 1000: the floor has to clear a 1024 frame less the workspace
+       padding and the card border, or the wrap scrolls sideways with its only
+       scrollbar under the last row and the sticky actions column lands on the
+       drift text. Below that the chassis marks the wrap and scrolls it. -->
+  <PcTable :min-width="880" label="Exposure by node">
     <template #head>
       <PcTh name sortable :sort="sortFor('name')" @sort="emit('sort', 'name')">Node</PcTh>
-      <PcTh sortable :sort="sortFor('open')" @sort="emit('sort', 'open')">Exposure</PcTh>
+      <PcTh class="ng-th-exposure" sortable :sort="sortFor('open')" @sort="emit('sort', 'open')">Exposure</PcTh>
       <PcTh sortable :sort="sortFor('managed')" @sort="emit('sort', 'managed')">Managed by</PcTh>
       <PcTh sortable :sort="sortFor('drift')" @sort="emit('sort', 'drift')">Drift</PcTh>
       <PcTh sortable :sort="sortFor('seen')" @sort="emit('sort', 'seen')">Seen</PcTh>

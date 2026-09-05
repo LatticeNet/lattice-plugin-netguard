@@ -780,6 +780,62 @@ export function compareExposure(
   }
 }
 
+/**
+ * The display order as a settled index, id to position. The page settles it at
+ * known points (the list painted, the snapshot fan-in complete, the operator
+ * sorted) and reads rows through it in between, because the default order
+ * ranks by unexplained ports and every node reports 0 of those until its own
+ * detail call returns: a live sort reshuffles the table under the pointer for
+ * the first seconds after load, which in a panel whose rows apply a firewall
+ * is how the wrong node gets opened.
+ */
+export type OrderIndex = ReadonlyMap<string, number>;
+
+export function settleOrder(
+  views: readonly { row: PostureRow; exposure: NodeExposure }[],
+  key: ExposureSortKey,
+  direction: "asc" | "desc",
+): Map<string, number> {
+  const factor = direction === "desc" ? -1 : 1;
+  const sorted = [...views].sort((a, b) => compareExposure(a, b, key) * factor || a.row.nodeId.localeCompare(b.row.nodeId));
+  return new Map(sorted.map((view, index) => [view.row.nodeId, index]));
+}
+
+/** Rows in settled order; a node the index has not seen goes after them, by name. */
+export function applyOrder<T extends { row: PostureRow }>(views: readonly T[], order: OrderIndex): T[] {
+  return [...views].sort((a, b) => {
+    const left = order.get(a.row.nodeId);
+    const right = order.get(b.row.nodeId);
+    if (left !== undefined && right !== undefined) return left - right;
+    if (left !== undefined) return -1;
+    if (right !== undefined) return 1;
+    return a.row.nodeName.localeCompare(b.row.nodeName) || a.row.nodeId.localeCompare(b.row.nodeId);
+  });
+}
+
+// ── search on the groups and zones lenses ───────────────────────────────────
+
+/**
+ * A group matches on its name, id or description, or on any rule's sentence
+ * or comment; `inRules` says the hit came from a rule, so the search can open
+ * the group the way the chassis asks (the operator asked for children).
+ */
+export function matchesGroup(group: SecurityGroup, ctx: ExposureContext, needle: string): { hit: boolean; inRules: boolean } {
+  const own = [group.name, group.id, group.description ?? ""].some((value) => value.toLowerCase().includes(needle));
+  if (own) return { hit: true, inRules: false };
+  const inRules = (group.rules ?? []).some((rule) =>
+    [ruleSentence(rule, ctx), rule.comment ?? "", rule.id].some((value) => value.toLowerCase().includes(needle)),
+  );
+  return { hit: inRules, inRules };
+}
+
+/** A zone matches on its name, id, description, interfaces or CIDRs. */
+export function matchesZone(zone: GuardZone, needle: string): boolean {
+  return [zone.name, zone.id, zone.description ?? "", ...(zone.interfaces ?? []), ...(zone.cidrs ?? [])].some((value) =>
+    value.toLowerCase().includes(needle),
+  );
+}
+
 /** The most recent snapshot time across the fleet, for the proof line. */
 export function newestCollectedAt(rows: readonly PostureRow[]): string | undefined {
   let best: string | undefined;

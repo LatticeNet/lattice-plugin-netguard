@@ -12,9 +12,14 @@ base Dashboard has no NetGuard page of its own.
 
 ## Operator surface
 
-One entry, three lenses, and a proof line under the title that says when the
+One entry, four lenses, and a proof line under the title that says when the
 fleet was observed (`observed 03:52:10Z, 41s ago · 33 nodes report`), with the
 counts (nodes, managed, observe only, drift, stale) on a stat strip beneath it.
+A tile whose read failed says "unknown" rather than the zero an empty join
+would print. The toolbar keeps one shape on every lens: the lens tabs, one
+search field that narrows whichever lens is open, the match or permission
+note, and one primary action (New group on Exposure, Attention and Groups,
+New zone on Zones).
 
 The page renders on the shared plugin chassis, `@latticenet/plugin-bridge/chassis`:
 the same header, stat strip, toolbar, table card, folding rows, chips and
@@ -23,23 +28,30 @@ publishes. `ui/src/styles.css` adds only what NetGuard alone needs (the port
 list in the exposure cell, the in-place node detail, the findings list, the
 rule rows under a group, the editor forms). Until the chassis ships from the
 package registry, `ui/package.json` points at the chassis branch build packed
-into `ui/vendor/latticenet-plugin-bridge-0.1.0-alpha.2.tgz`; swap it back to
-the registry version once `0.1.0-alpha.2` is published.
+into `ui/vendor/latticenet-plugin-bridge-0.1.0-alpha.2.tgz` (bridge `66559da`,
+which lets the sticky table header pin to the frame); swap it back to the
+registry version once `0.1.0-alpha.2` is published.
 
 - **Exposure:** one row per node answering the first question an operator
   has: what is open to the internet right now. The column is computed from the
   node's reported listeners on non-loopback binds, minus what a bound group
-  rule or trusted zone confines; a port nothing explains is red and expands,
-  under the table, into the suggestion the server's review produces, with
-  "Add to group" (the group editor pre-filled with the proposed rule) and
-  "Ignore" (session-local, never saved). MANAGED BY names the bound groups, a
+  rule or trusted zone confines; a port nothing explains is red and opens its
+  row on the Attention lens. MANAGED BY names the bound groups, a
   legacy baseline, or nothing; DRIFT and SEEN carry the drift verdict and the
   snapshot age. A port the node's SSH knock table gates is confined, not
   open: it prints as a "gated" chip under the port list. Opening a row folds
   the node's detail in place beneath it: its unexplained ports, drift hashes,
   listening sockets, interfaces, foreign nftables tables, and the ruleset its
   intent compiles to, with the per-node review and apply flow. More than one
-  row can be open, and `?expand=<node_id>` opens one by URL.
+  row can be open, and `?expand=<node_id>` opens one by URL. The row order is
+  settled when the list paints and again when every snapshot has landed, so
+  the rows hold still while the per-node reads stream in.
+- **Attention:** the open ports nothing explains, one row each, with the
+  count on the tab. A row expands into the suggestion the server's review
+  produces, with "Add to group" (the group editor pre-filled with the
+  proposed rule) and "Ignore" (session-local, never saved, undoable from the
+  row). The lens says why it is empty: reality not readable, snapshots still
+  reading, no match, or nothing unexplained.
 - **Groups:** ordered ingress and egress allow or deny rules over protocols,
   inclusive port ranges, and any/zone/CIDR/node/group/domain remotes, each
   rule read back as a sentence ("allows TCP 22 from 10.7.0.0/24"), with how

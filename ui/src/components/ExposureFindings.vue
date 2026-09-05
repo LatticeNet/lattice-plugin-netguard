@@ -1,7 +1,9 @@
 <script setup lang="ts">
 /**
- * The open ports nothing explains, one row each, in the attention-list form
- * under the exposure card.
+ * The Attention lens: the open ports nothing explains, one row each, in the
+ * attention-list form. It is a lens of its own, reached from the toolbar
+ * with its count on the tab, because eleven things the page wants acted on
+ * are not reachable when they sit under a 33 row table.
  *
  * A row is a sentence the operator can act on: the node, the port and its
  * owner, then on expansion the server's own suggestion for it (the same
@@ -11,11 +13,15 @@
  * row itself, keeps counting, and offers Undo, because a firewall finding
  * that a click could make disappear for good is not a finding anyone sees
  * twice.
+ *
+ * The empty states are honest about why the list is empty: the session
+ * cannot read reality, the snapshots are still streaming in, the search
+ * matched nothing, or every open port on a fresh snapshot is allowed.
  */
 import { computed } from "vue";
-import { ChevronRight, LoaderCircle } from "@lucide/vue";
+import { ChevronRight, LoaderCircle, ShieldCheck } from "@lucide/vue";
 
-import { PcButton, PcCount, PcPanel, PcPanelHeader, PcStateDot } from "@latticenet/plugin-bridge/chassis";
+import { PcButton, PcCount, PcEmptyState, PcPanel, PcPanelHeader, PcStateDot } from "@latticenet/plugin-bridge/chassis";
 
 import { formatProcesses, type Finding } from "../exposure";
 import { suggestionsByPort, type GuardSuggestion, type Review } from "../netguardModel";
@@ -29,6 +35,13 @@ const props = defineProps<{
   reviewLoading: ReadonlySet<string>;
   reviewErrors: ReadonlyMap<string, string>;
   canAdmin: boolean;
+  canSeeReality: boolean;
+  /** Snapshot reads still in flight, as "done of total"; findings land as each returns. */
+  reading: { done: number; total: number };
+  /** The toolbar search is narrowing the fleet the findings are drawn from. */
+  searching: boolean;
+  /** The nodes the findings were drawn from, after the search. */
+  nodes: number;
 }>();
 
 const emit = defineEmits<{
@@ -41,6 +54,12 @@ const emit = defineEmits<{
 const ignoredCount = computed(() => props.findings.filter((finding) => props.ignored.has(finding.key)).length);
 const openCount = computed(() => props.findings.length - ignoredCount.value);
 const countLabel = computed(() => `${openCount.value} open${ignoredCount.value ? ` · ${ignoredCount.value} ignored` : ""}`);
+const stillReading = computed(() => props.reading.total > 0 && props.reading.done < props.reading.total);
+
+const description = computed(() => {
+  if (!props.findings.length) return "Open ports the internet can reach with no rule saying so, drawn from every fresh snapshot.";
+  return `${openCount.value} ${openCount.value === 1 ? "port" : "ports"} the internet can reach with no rule saying so${ignoredCount.value ? `, ${ignoredCount.value} ignored for this session` : ""}.`;
+});
 
 /** The server's suggestions for the ports in this finding's span, if reviewed. */
 function serverSuggestions(finding: Finding): GuardSuggestion[] {
@@ -58,15 +77,27 @@ function serverSuggestions(finding: Finding): GuardSuggestion[] {
 </script>
 
 <template>
-  <PcPanel v-if="findings.length" label="Open ports nothing explains">
-    <PcPanelHeader
-      title="Findings"
-      :description="`${openCount} ${openCount === 1 ? 'port' : 'ports'} the internet can reach with no rule saying so${ignoredCount ? `, ${ignoredCount} ignored for this session` : ''}.`"
-    >
-      <PcCount :value="countLabel" />
+  <PcPanel label="Open ports nothing explains">
+    <PcPanelHeader title="Attention" :description="description">
+      <PcCount v-if="findings.length" :value="countLabel" />
     </PcPanelHeader>
 
-    <div class="ng-attn ng-attn-panel">
+    <PcEmptyState v-if="!canSeeReality" kind="permission" title="Exposure cannot be read by this session">
+      <p>Open ports are computed from each node's reported listeners, and this session has no scope to read node reality. Nothing here is known to be open or closed.</p>
+    </PcEmptyState>
+    <PcEmptyState v-else-if="!findings.length && stillReading" title="Still reading snapshots">
+      <template #icon><LoaderCircle class="pc-spin" :size="26" /></template>
+      <p>{{ reading.done }} of {{ reading.total }} snapshots read. A finding appears here as the node's snapshot lands.</p>
+    </PcEmptyState>
+    <PcEmptyState v-else-if="!findings.length && searching" kind="no-match" title="No finding matches that search">
+      <p>No open port on {{ nodes }} matching {{ nodes === 1 ? 'node' : 'nodes' }} lacks a rule. The search covers node name and id, group and zone ids, group names, open ports and their owning process.</p>
+    </PcEmptyState>
+    <PcEmptyState v-else-if="!findings.length" title="Nothing unexplained">
+      <template #icon><ShieldCheck :size="26" /></template>
+      <p>Every port open to the internet on a fresh snapshot is allowed by a rule. Nodes whose snapshot is stale or that have never reported are not counted here; their rows on the Exposure lens say so.</p>
+    </PcEmptyState>
+
+    <div v-else class="ng-attn ng-attn-panel">
       <article
         v-for="finding in findings"
         :id="`finding-${finding.key}`"
