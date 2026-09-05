@@ -162,6 +162,32 @@ describe("computeExposure", () => {
     expect(isPublicCidr("::/0")).toBe(true);
   });
 
+  it("confines a port the node's knock table gates instead of calling it open", () => {
+    // Nothing of Lattice's confines sshd on this node, but the knock table
+    // does, and it drops the SYN before any guard table would see it.
+    const unbound = row("home", { coverage: "unbound", driftState: "unknown" });
+    const sockets = reality([listener(22), listener(3434, "0.0.0.0", "sshd"), listener(5432, "0.0.0.0", "postgres")]);
+    const result = computeExposure(unbound, sockets, ctx, { ports: [22, 3434] });
+    expect(formatSpans(result.open)).toBe("5432");
+    expect(result.unexplained).toBe(1);
+    expect(result.confined).toEqual([
+      { protocol: "tcp", from: 22, to: 22, processes: ["sshd"], scopes: ["the SSH knock gate"] },
+      { protocol: "tcp", from: 3434, to: 3434, processes: ["sshd"], scopes: ["the SSH knock gate"] },
+    ]);
+
+    // A public allow in the guard table does not reopen it: the gate runs first.
+    const managed = computeExposure(managedNode, reality([listener(22)]), ctx, { ports: [22] });
+    expect(managed.open).toEqual([]);
+    expect(managed.confined[0]?.scopes).toEqual(["the SSH knock gate"]);
+
+    // The gate is tcp only, and a port it does not list is judged as before.
+    const udp = computeExposure(unbound, reality([listener(22, "0.0.0.0", "wg", "udp"), listener(23)]), ctx, { ports: [22] });
+    expect(udp.open.map((span) => `${formatSpans([span])}:${span.verdict}`)).toEqual(["22/udp:unexplained", "23:unexplained"]);
+
+    // Without the gate the same node is as red as it always was.
+    expect(computeExposure(unbound, sockets, ctx).unexplained).toBe(3);
+  });
+
   it("refuses to trust scoped rules once the node has drifted", () => {
     const drifted = row("n1", { ...managedNode, driftState: "drift" });
     const result = computeExposure(drifted, reality([listener(22), listener(5432, "0.0.0.0", "postgres")]), ctx);
