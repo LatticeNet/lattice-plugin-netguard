@@ -17,6 +17,13 @@
  * module treats only `any` and a public cidr as opening a port to the
  * internet, because "22 from 10.7.0.0/24" does not.
  *
+ * One rule comes from outside the guard model entirely: the SSH knock gate.
+ * A node that carries the inet lattice_knock table drops new connections to
+ * the ports it gates unless the source knocked or is a management source, and
+ * it does so before lattice_guard sees the packet. A gated port is confined
+ * whatever the rules say, and rendering it red claimed sshd was open to the
+ * internet on every knock node in the fleet.
+ *
  * One rule is added that the server does not need: whether the compiled table
  * is actually live. On a managed node whose live table matches what Lattice
  * applied, a listener no rule covers is dropped by the default policy and is
@@ -85,6 +92,15 @@ export interface NodeExposure {
   /** True when the table Lattice compiled is believed to be what the node runs. */
   enforced: boolean;
 }
+
+/** What the node's SSH knock table gates, as the reality detail reports it. */
+export interface KnockGate {
+  /** The tcp ports the gate covers. */
+  ports: readonly number[];
+}
+
+/** The scope label a knock-gated port prints. */
+export const KNOCK_SCOPE = "the SSH knock gate";
 
 export interface ExposureContext {
   groups: readonly SecurityGroup[];
@@ -412,6 +428,7 @@ function classify(
   interfaces: readonly InterfaceFacts[],
   enforced: boolean,
   ctx: ExposureContext,
+  knock: KnockGate | undefined,
 ): Entry | undefined {
   const normalized = normalizeListener(listener);
   if (!normalized) return undefined;
@@ -421,6 +438,12 @@ function classify(
   const process = (listener.process ?? "").trim();
   if (process) processes.add(process);
   const base = { ...normalized, processes };
+
+  // Gated by the knock table: only a source that knocked, or a management
+  // source, gets a SYN through, and that table runs ahead of lattice_guard.
+  if (knock && normalized.protocol === "tcp" && knock.ports.includes(normalized.port)) {
+    return { ...base, kind: "confined", scopes: [KNOCK_SCOPE] };
+  }
 
   // Bound to an overlay or custom zone address: reachable only through that
   // interface, whatever the rules say.
@@ -480,12 +503,14 @@ function foldSpans<T extends Span>(
  * `reality` is the node's full snapshot, or undefined when none was fetched.
  * A stale snapshot is still classified, because last week's sockets are
  * better evidence than none, and the result says it is stale so the table
- * can refuse to print it as current.
+ * can refuse to print it as current. `knock` is the node's SSH knock gate
+ * when the detail reported one with a known scope.
  */
 export function computeExposure(
   row: PostureRow,
   reality: GuardNodeReality | undefined,
   ctx: ExposureContext,
+  knock?: KnockGate,
 ): NodeExposure {
   const managed = managedBy(row, ctx);
   const enforced = isEnforced(row);
@@ -506,7 +531,7 @@ export function computeExposure(
   // most exposed classification wins.
   const byKey = new Map<string, Entry>();
   for (const listener of reality.listeners ?? []) {
-    const entry = classify(listener, row, rules, zones, interfaces, enforced, ctx);
+    const entry = classify(listener, row, rules, zones, interfaces, enforced, ctx, knock);
     if (!entry) continue;
     const key = `${entry.protocol}/${entry.port}`;
     const existing = byKey.get(key);

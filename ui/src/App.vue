@@ -52,6 +52,7 @@ import {
   type ExposureContext,
   type ExposureSortKey,
   type Finding,
+  type KnockGate,
 } from "./exposure";
 import { countPosture, joinPosture, type PostureRow } from "./posture";
 import {
@@ -176,6 +177,8 @@ async function call<T>(method: string, payload: unknown = {}): Promise<T> {
 
 /** Full snapshots by node, fetched after the fleet list so the table paints first. */
 const realityByNode = ref(new Map<string, GuardNodeReality>());
+/** Knock gates with a known scope, by node; a gate the detail cannot scope is not listed. */
+const knockByNode = ref(new Map<string, KnockGate>());
 const detailState = ref(new Map<string, DetailState>());
 const detailProgress = ref({ done: 0, total: 0 });
 /**
@@ -211,6 +214,7 @@ async function loadReality(): Promise<void> {
 async function loadDetails(epoch: number): Promise<void> {
   const targets = realityRows.value.filter((row) => row.snapshot_status !== "unknown").map((row) => row.node_id);
   realityByNode.value = new Map();
+  knockByNode.value = new Map();
   detailState.value = new Map();
   detailProgress.value = { done: 0, total: targets.length };
   let next = 0;
@@ -222,6 +226,8 @@ async function loadDetails(epoch: number): Promise<void> {
         if (epoch !== refreshEpoch) return;
         const reality = response.node?.reality ?? undefined;
         if (reality) realityByNode.value.set(nodeId, reality);
+        const gated = response.node?.knock_gate ? (response.node.knock_gated_ports ?? []) : [];
+        if (gated.length) knockByNode.value.set(nodeId, { ports: gated });
         detailState.value.set(nodeId, reality ? "loaded" : "failed");
       } catch {
         if (epoch !== refreshEpoch) return;
@@ -283,7 +289,7 @@ function detailStateFor(row: PostureRow): DetailState {
 const views = computed<ExposureRowView[]>(() =>
   posture.value.map((row) => ({
     row,
-    exposure: computeExposure(row, realityByNode.value.get(row.nodeId), exposureContext.value),
+    exposure: computeExposure(row, realityByNode.value.get(row.nodeId), exposureContext.value, knockByNode.value.get(row.nodeId)),
     detail: detailStateFor(row),
   })),
 );
