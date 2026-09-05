@@ -121,6 +121,19 @@ export function endSentence(value: string): string {
  * A JSON round trip is the right conversion and not a lazy one: the wire is
  * JSON, so anything it would drop could not have been transmitted anyway.
  */
+/**
+ * The delete question, with its blast radius in words. The confirm dialog
+ * covers the table, so the "used by" count the operator just read is off
+ * screen at the moment they decide; the sentence carries it.
+ */
+export function deleteQuestion(kind: "group" | "zone", label: string, usedBy: number): string {
+  const noun = kind === "group" ? "security group" : "trusted zone";
+  const lead = `This removes the ${noun} ${label} from NetGuard.`;
+  if (usedBy === 0) return `${lead} No node references it.`;
+  if (usedBy === 1) return `${lead} 1 node still references it; it keeps its current rules until it is planned again.`;
+  return `${lead} ${usedBy} nodes still reference it; each keeps its current rules until it is planned again.`;
+}
+
 export function toWire<T>(value: T): T {
   if (value === undefined || value === null) return value;
   return JSON.parse(JSON.stringify(value)) as T;

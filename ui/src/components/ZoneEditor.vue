@@ -5,7 +5,8 @@
  */
 import { reactive, ref, watch } from "vue";
 
-import ModalDialog from "./ModalDialog.vue";
+import { PcButton, PcModal, PcNotice } from "@latticenet/plugin-bridge/chassis";
+
 import type { GuardZone } from "../netguardModel";
 
 const props = defineProps<{
@@ -43,6 +44,10 @@ function splitList(value: string): string[] {
   return [...new Set(value.split(",").map((part) => part.trim()).filter(Boolean))];
 }
 
+function close(): void {
+  if (!props.saving) emit("close");
+}
+
 function submit(): void {
   localError.value = "";
   if (!form.id.trim() || !form.name.trim()) {
@@ -60,40 +65,41 @@ function submit(): void {
 </script>
 
 <template>
-  <ModalDialog
+  <PcModal
     :open="open"
-    :busy="saving"
     :title="zone ? `Edit ${zone.name}` : 'New trusted zone'"
-    subtitle="Traffic arriving on a trusted interface or from a trusted CIDR is accepted before any security group is evaluated."
-    @close="emit('close')"
+    description="Traffic arriving on a trusted interface or from a trusted CIDR is accepted before any security group is evaluated."
+    @close="close"
   >
-    <div class="form-grid">
-      <label class="field">
-        <span>Identifier</span>
-        <input v-model="form.id" type="text" :disabled="Boolean(zone)" placeholder="office-vpn" />
-      </label>
-      <label class="field">
-        <span>Name</span>
-        <input v-model="form.name" type="text" placeholder="Office VPN" />
-      </label>
-      <label class="field span-2">
-        <span>Description</span>
-        <input v-model="form.description" type="text" />
-      </label>
-      <label class="field">
-        <span>Interfaces</span>
-        <input v-model="form.interfaces" type="text" placeholder="wg0, tailscale0" />
-      </label>
-      <label class="field">
-        <span>CIDRs</span>
-        <input v-model="form.cidrs" type="text" placeholder="10.8.0.0/24" />
-      </label>
+    <div class="ng-stack">
+      <div class="ng-form-grid">
+        <label class="ng-field">
+          <span>Identifier</span>
+          <input v-model="form.id" type="text" :disabled="Boolean(zone)" placeholder="office-vpn" />
+        </label>
+        <label class="ng-field">
+          <span>Name</span>
+          <input v-model="form.name" type="text" placeholder="Office VPN" />
+        </label>
+        <label class="ng-field ng-span-2">
+          <span>Description</span>
+          <input v-model="form.description" type="text" />
+        </label>
+        <label class="ng-field">
+          <span>Interfaces</span>
+          <input v-model="form.interfaces" type="text" placeholder="wg0, tailscale0" />
+        </label>
+        <label class="ng-field">
+          <span>CIDRs</span>
+          <input v-model="form.cidrs" type="text" placeholder="10.8.0.0/24" />
+        </label>
+      </div>
+      <PcNotice v-if="localError || error"><p>{{ localError || error }}</p></PcNotice>
     </div>
-    <p v-if="localError || error" class="notice danger"><span>{{ localError || error }}</span></p>
 
     <template #footer>
-      <button class="button secondary" type="button" :disabled="saving" @click="emit('close')">Cancel</button>
-      <button class="button primary" type="button" :disabled="saving" @click="submit">Save zone</button>
+      <PcButton :disabled="saving" @click="close">Cancel</PcButton>
+      <PcButton variant="primary" :busy="saving" @click="submit">Save zone</PcButton>
     </template>
-  </ModalDialog>
+  </PcModal>
 </template>
