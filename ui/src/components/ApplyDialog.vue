@@ -8,11 +8,15 @@
  * operator's own shell path, requires the lockout risk to be accepted
  * explicitly. The two steps exist because a single button next to a diff gets
  * pressed while reading the diff.
+ *
+ * Neither the scrim nor Escape closes the dialog while a plan is in flight,
+ * because a half-sent write must not lose its error message.
  */
 import { computed, ref, watch } from "vue";
-import { CircleAlert, LoaderCircle, ShieldAlert } from "@lucide/vue";
+import { ShieldAlert } from "@lucide/vue";
 
-import ModalDialog from "./ModalDialog.vue";
+import { PcButton, PcModal, PcNotice } from "@latticenet/plugin-bridge/chassis";
+
 import { collapseUnchanged, diffRulesets, summarizeDiff } from "../diff";
 import type { PostureRow } from "../posture";
 import type { LintFinding } from "../netguardModel";
@@ -67,138 +71,102 @@ const confirmSatisfied = computed(() => {
   return true;
 });
 
-function advance(): void {
-  step.value = 2;
+const title = computed(() => (step.value === 1 ? `Review the change to ${nodeLabel.value}` : `Confirm apply to ${nodeLabel.value}`));
+const description = computed(() =>
+  step.value === 1
+    ? "Nothing has been sent to the node yet. This creates an approval, which the apply pipeline then carries out."
+    : "The next action creates an approval for this node.",
+);
+
+function close(): void {
+  if (!props.planning) emit("close");
 }
 </script>
 
 <template>
-  <ModalDialog
-    :open="open"
-    :busy="planning"
-    width="wide"
-    :title="step === 1 ? `Review the change to ${nodeLabel}` : `Confirm apply to ${nodeLabel}`"
-    :subtitle="step === 1
-      ? 'Nothing has been sent to the node yet. This creates an approval, which the apply pipeline then carries out.'
-      : 'The next action creates an approval for this node.'"
-    @close="emit('close')"
-  >
-    <template v-if="step === 1">
-      <div v-if="compileError" class="notice danger">
-        <CircleAlert :size="16" />
-        <div>
-          <strong>This node's intent does not compile</strong>
+  <PcModal :open="open" :title="title" :description="description" size="large" @close="close">
+    <div class="ng-stack">
+      <template v-if="step === 1">
+        <PcNotice v-if="compileError" title="This node's intent does not compile">
           <p>{{ compileError }}</p>
-        </div>
-      </div>
+        </PcNotice>
 
-      <div v-for="finding in blocking" :key="finding.code" class="notice danger">
-        <ShieldAlert :size="16" />
-        <div>
-          <strong>Blocking: {{ finding.code }}</strong>
+        <PcNotice v-for="finding in blocking" :key="finding.code" :title="`Blocking: ${finding.code}`">
+          <template #icon><ShieldAlert :size="17" /></template>
           <p>{{ finding.message }}</p>
-        </div>
-      </div>
-      <div v-for="finding in warnings" :key="finding.code" class="notice warn">
-        <CircleAlert :size="16" />
-        <div>
-          <strong>{{ finding.code }}</strong>
+        </PcNotice>
+        <PcNotice v-for="finding in warnings" :key="finding.code" tone="warning" :title="finding.code">
           <p>{{ finding.message }}</p>
-        </div>
-      </div>
+        </PcNotice>
 
-      <section class="subpanel">
-        <header class="subpanel-head">
-          <h3>Change to the intended ruleset</h3>
-          <p>
-            {{ summary }}. This compares the ruleset as it was when you opened this node against what
-            it compiles to now.
-          </p>
-          <p v-if="driftCaveat" class="danger-text">
-            This node has drifted, so its live table is not what Lattice last applied. These lines
-            describe the change to Lattice's intent, not to the ruleset currently on the machine.
-          </p>
-          <p v-if="diff.truncated" class="warn-text">
-            The ruleset was too large to diff line by line, so both versions are shown in full.
-          </p>
-        </header>
-        <div v-if="diff.identical" class="subpanel-body subtle">
-          The intended ruleset is unchanged. Applying re-installs the same rules, which is the way to
-          bring a drifted node back into line.
-        </div>
-        <pre v-else class="code diff"><template v-for="(line, index) in collapsed" :key="index"><span
-          v-if="line.kind === 'gap'" class="diff-gap">    {{ line.hidden }} unchanged {{ line.hidden === 1 ? 'line' : 'lines' }}
-</span><span v-else class="diff-line" :data-kind="line.kind">{{ line.kind === 'add' ? '+' : line.kind === 'remove' ? '-' : ' ' }} {{ line.text }}
+        <section class="ng-subpanel">
+          <header class="ng-subpanel-head">
+            <h3>Change to the intended ruleset</h3>
+            <p>
+              {{ summary }}. This compares the ruleset as it was when you opened this node against what
+              it compiles to now.
+            </p>
+            <p v-if="driftCaveat" class="pc-danger-text">
+              This node has drifted, so its live table is not what Lattice last applied. These lines
+              describe the change to Lattice's intent, not to the ruleset currently on the machine.
+            </p>
+            <p v-if="diff.truncated" class="ng-warn-text">
+              The ruleset was too large to diff line by line, so both versions are shown in full.
+            </p>
+          </header>
+          <div v-if="diff.identical" class="ng-subpanel-body ng-subtle">
+            The intended ruleset is unchanged. Applying re-installs the same rules, which is the way to
+            bring a drifted node back into line.
+          </div>
+          <pre v-else class="ng-code ng-diff"><template v-for="(line, index) in collapsed" :key="index"><span
+            v-if="line.kind === 'gap'" class="ng-diff-gap">    {{ line.hidden }} unchanged {{ line.hidden === 1 ? 'line' : 'lines' }}
+</span><span v-else class="ng-diff-line" :data-kind="line.kind">{{ line.kind === 'add' ? '+' : line.kind === 'remove' ? '-' : ' ' }} {{ line.text }}
 </span></template></pre>
-      </section>
-    </template>
+        </section>
+      </template>
 
-    <template v-else>
-      <div class="confirm">
+      <template v-else>
         <p>
           This creates an approval to install the ruleset above on
           <strong>{{ nodeLabel }}</strong>
-          (<span class="mono">{{ row?.nodeId }}</span>). No other node is touched.
+          (<span class="pc-mono">{{ row?.nodeId }}</span>). No other node is touched.
         </p>
-        <p class="subtle">
+        <p class="ng-subtle">
           The node validates the candidate, snapshots its live ruleset, arms a 60 second dead-man
           watchdog, commits, then verifies it can still reach the control plane. That check is an
           outbound connection, so it does not prove your inbound shell path survived.
         </p>
 
-        <div v-if="blocking.length" class="notice danger">
-          <ShieldAlert :size="16" />
-          <div>
-            <strong>This plan removes the management path this node reports</strong>
-            <p v-for="finding in blocking" :key="finding.code">{{ finding.message }}</p>
-            <label class="check">
-              <input v-model="acceptLockoutRisk" type="checkbox" />
-              <span>
-                I accept the lockout risk on {{ nodeLabel }}. This is recorded in the audit log
-                against my account.
-              </span>
-            </label>
-          </div>
-        </div>
+        <PcNotice v-if="blocking.length" title="This plan removes the management path this node reports">
+          <template #icon><ShieldAlert :size="17" /></template>
+          <p v-for="finding in blocking" :key="finding.code">{{ finding.message }}</p>
+          <label class="ng-check">
+            <input v-model="acceptLockoutRisk" type="checkbox" />
+            <span>
+              I accept the lockout risk on {{ nodeLabel }}. This is recorded in the audit log
+              against my account.
+            </span>
+          </label>
+        </PcNotice>
 
-        <label class="field">
+        <label class="ng-field">
           <span>Type the node name to confirm: {{ nodeLabel }}</span>
           <input v-model="typedName" type="text" autocomplete="off" spellcheck="false" />
         </label>
 
-        <div v-if="error" class="notice danger">
-          <CircleAlert :size="16" /><span>{{ error }}</span>
-        </div>
-      </div>
-    </template>
+        <PcNotice v-if="error"><p>{{ error }}</p></PcNotice>
+      </template>
+    </div>
 
     <template #footer>
-      <button class="button secondary" type="button" :disabled="planning" @click="emit('close')">
-        Cancel
-      </button>
-      <button
-        v-if="step === 1"
-        class="button primary"
-        type="button"
-        :disabled="Boolean(compileError)"
-        @click="advance"
-      >
-        Continue
-      </button>
+      <PcButton :disabled="planning" @click="close">Cancel</PcButton>
+      <PcButton v-if="step === 1" variant="primary" :disabled="Boolean(compileError)" @click="step = 2">Continue</PcButton>
       <template v-else>
-        <button class="button secondary" type="button" :disabled="planning" @click="step = 1">
-          Back to the diff
-        </button>
-        <button
-          class="button danger"
-          type="button"
-          :disabled="!confirmSatisfied || planning"
-          @click="emit('confirm', acceptLockoutRisk)"
-        >
-          <LoaderCircle v-if="planning" class="spin" :size="14" />
+        <PcButton :disabled="planning" @click="step = 1">Back to the diff</PcButton>
+        <PcButton variant="danger" :disabled="!confirmSatisfied" :busy="planning" @click="emit('confirm', acceptLockoutRisk)">
           Create approval for {{ nodeLabel }}
-        </button>
+        </PcButton>
       </template>
     </template>
-  </ModalDialog>
+  </PcModal>
 </template>

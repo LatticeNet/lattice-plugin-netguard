@@ -110,6 +110,8 @@ interface Spec {
   listeners: GuardListener[];
   foreign?: string[];
   lockout?: boolean;
+  /** The tcp ports the node's SSH knock table gates, when SSH Guard is on it. */
+  knock?: number[];
   ageSeconds: number;
 }
 
@@ -128,20 +130,20 @@ const SPECS: Spec[] = [
   ...RELAYS.map<Spec>((name, index) => ({
     id: name, name, shape: "managed", groups: ["ssh", "relay-hub", ...(index % 5 === 0 ? ["monitoring"] : [])], zones: ["wireguard", ...(index % 3 === 0 ? ["tailscale"] : [])],
     listeners: [...relayListeners(), ...(index % 5 === 0 ? [listen(9100, "node_exporter")] : []), ...(index === 7 ? [listen(8080, "nginx")] : [])],
-    lockout: index === 14, ageSeconds: 20 + index * 7,
+    lockout: index === 14, knock: index % 4 === 0 ? [22] : undefined, ageSeconds: 20 + index * 7,
   })),
   { id: "metix-dmit-1", name: "[Metix]-DMIT-1", shape: "managed", groups: ["ssh", "relay-hub", "web"], zones: ["wireguard", "tailscale"], listeners: [...relayListeners(), listen(80, "nginx"), listen(443, "nginx")], ageSeconds: 41 },
   { id: "metix-dmit-3", name: "[Metix]-DMIT-3", shape: "managed", groups: ["ssh", "relay-hub", "db-wg"], zones: ["wireguard"], listeners: [...relayListeners(), listen(5432, "postgres"), listen(5432, "postgres", "10.7.0.23")], ageSeconds: 33 },
   { id: "metix-racknerd-1", name: "[Metix]-RackNerd-1", shape: "managed", groups: ["ssh", "relay-hub"], zones: ["wireguard"], listeners: relayListeners(), ageSeconds: 58 },
   { id: "metix-dmit-2", name: "[Metix]-DMIT-2", shape: "drift", groups: ["ssh", "relay-hub", "db-wg"], zones: ["wireguard"], listeners: [...relayListeners(), listen(5432, "postgres"), listen(8080, "nginx")], ageSeconds: 27 },
   { id: "fra-exit-02", name: "fra-exit-02", shape: "drift", groups: ["ssh", "relay-hub"], zones: ["wireguard"], listeners: [...relayListeners(), listen(8080, "nginx")], foreign: ["ip filter"], ageSeconds: 71 },
-  { id: "cd-build-1", name: "[cd]-build-1", shape: "observe", groups: ["ssh"], zones: [], listeners: [listen(22, "sshd"), listen(8080, "nginx"), listen(2375, "dockerd")], foreign: ["ip nat", "ip filter"], ageSeconds: 45 },
+  { id: "cd-build-1", name: "[cd]-build-1", shape: "observe", groups: ["ssh"], zones: [], listeners: [listen(22, "sshd"), listen(3434, "sshd"), listen(8080, "nginx"), listen(2375, "dockerd")], foreign: ["ip nat", "ip filter", "inet lattice_knock"], knock: [22, 3434], ageSeconds: 45 },
   { id: "cd-build-2", name: "[cd]-build-2", shape: "observe", groups: ["ssh", "mgmt-office"], zones: ["tailscale"], listeners: [listen(22, "sshd"), listen(8443, "lattice-console"), listen(9100, "node_exporter", "100.64.0.12")], ageSeconds: 52 },
   { id: "cd-lab-1", name: "[cd]-lab-1", shape: "observe", groups: [], zones: [], listeners: [listen(22, "sshd"), listen(3000, "grafana")], ageSeconds: 12 },
   { id: "cd-lab-2", name: "[cd]-lab-2", shape: "observe-stale", groups: ["ssh"], zones: ["wireguard"], listeners: [listen(22, "sshd"), listen(6443, "kube-apiserver")], ageSeconds: 3 * 86400 + 1200 },
   { id: "cd-homeserver", name: "[cd]-homeserver", shape: "legacy", groups: [], zones: [], listeners: [listen(22, "sshd"), listen(80, "nginx"), listen(443, "nginx"), listen(5432, "postgres"), listen(5432, "postgres", "::"), listen(631, "cupsd", "127.0.0.1")], ageSeconds: 12 },
   { id: "cd-nas", name: "[cd]-nas", shape: "legacy-stale", groups: [], zones: [], listeners: [listen(22, "sshd"), listen(445, "smbd")], ageSeconds: 5 * 86400 },
-  { id: "cd-mac-air", name: "[cd]-mac-air", shape: "unbound", groups: [], zones: [], listeners: [listen(5000, "ControlCenter"), listen(7000, "ControlCenter"), listen(22, "sshd")], ageSeconds: 118 },
+  { id: "cd-mac-air", name: "[cd]-mac-air", shape: "unbound", groups: [], zones: [], listeners: [listen(5000, "ControlCenter"), listen(7000, "ControlCenter"), listen(22, "sshd")], knock: [22], ageSeconds: 118 },
   { id: "cd-pi-zero", name: "[cd]-pi-zero", shape: "never", groups: [], zones: [], listeners: [], ageSeconds: 0 },
 ];
 
@@ -222,7 +224,12 @@ function buildNode(spec: Spec, index: number, groups: SecurityGroup[]): NodeStat
     ...(binding.last_error ? { last_error: binding.last_error } : {}),
     ...(reality ? { listener_count: reality.listeners?.length ?? 0, interface_count: reality.interfaces?.length ?? 0, foreign_table_count: reality.foreign_tables?.length ?? 0 } : {}),
   };
-  const detail: RealityDetail = { node_id: spec.id, snapshot_status: status, reality, received_at: collectedAt ?? null, stale_after: summary.stale_after ?? null };
+  const detail: RealityDetail = {
+    node_id: spec.id, snapshot_status: status, reality, received_at: collectedAt ?? null, stale_after: summary.stale_after ?? null,
+    // The knock table is reported as a foreign table plus its scope; a gated
+    // port is confined whatever the guard rules say.
+    ...(spec.knock && !never ? { knock_gate: true, knock_gated_ports: spec.knock } : {}),
+  };
   if (spec.shape === "unbound" || never) {
     node.binding = { node_id: spec.id, group_ids: [], zone_ids: [], managed: false, version: 0 };
   }

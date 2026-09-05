@@ -13,8 +13,18 @@ base Dashboard has no NetGuard page of its own.
 ## Operator surface
 
 One entry, three lenses, and a proof line under the title that says when the
-fleet was observed and what it counted (`observed 03:52:10Z, 41s ago · 33
-nodes · 25 managed · 4 observe only · 2 drift · 2 stale`).
+fleet was observed (`observed 03:52:10Z, 41s ago · 33 nodes report`), with the
+counts (nodes, managed, observe only, drift, stale) on a stat strip beneath it.
+
+The page renders on the shared plugin chassis, `@latticenet/plugin-bridge/chassis`:
+the same header, stat strip, toolbar, table card, folding rows, chips and
+overlays as the other plugin frames, on the token contract the console
+publishes. `ui/src/styles.css` adds only what NetGuard alone needs (the port
+list in the exposure cell, the in-place node detail, the findings list, the
+rule rows under a group, the editor forms). Until the chassis ships from the
+package registry, `ui/package.json` points at the chassis branch build packed
+into `ui/vendor/latticenet-plugin-bridge-0.1.0-alpha.2.tgz`; swap it back to
+the registry version once `0.1.0-alpha.2` is published.
 
 - **Exposure:** one row per node answering the first question an operator
   has: what is open to the internet right now. The column is computed from the
@@ -24,13 +34,17 @@ nodes · 25 managed · 4 observe only · 2 drift · 2 stale`).
   "Add to group" (the group editor pre-filled with the proposed rule) and
   "Ignore" (session-local, never saved). MANAGED BY names the bound groups, a
   legacy baseline, or nothing; DRIFT and SEEN carry the drift verdict and the
-  snapshot age. Opening a node shows its drift hashes, listening sockets,
-  interfaces, foreign nftables tables, and the ruleset its intent compiles
-  to, with the per-node review and apply flow.
+  snapshot age. A port the node's SSH knock table gates is confined, not
+  open: it prints as a "gated" chip under the port list. Opening a row folds
+  the node's detail in place beneath it: its unexplained ports, drift hashes,
+  listening sockets, interfaces, foreign nftables tables, and the ruleset its
+  intent compiles to, with the per-node review and apply flow. More than one
+  row can be open, and `?expand=<node_id>` opens one by URL.
 - **Groups:** ordered ingress and egress allow or deny rules over protocols,
   inclusive port ranges, and any/zone/CIDR/node/group/domain remotes, each
   rule read back as a sentence ("allows TCP 22 from 10.7.0.0/24"), with how
-  many nodes bind the group. A group is attached to nodes through a binding.
+  many nodes bind the group; the rules fold under the group's row. A group is
+  attached to nodes through a binding.
 - **Zones:** interfaces and CIDRs accepted before any security group is
   evaluated, with how many nodes trust each. This is how a management path
   stays open.
@@ -58,7 +72,8 @@ npm ci
 npm run dev
 # http://localhost:5183/dev.html?scenario=fleet&width=1440
 # scenario=fleet|empty|readonly|failing  width=1440|1024|375  theme=dark|light
-# frame=<pane height>  zoom=<factor>  plugin=lens%3Dgroups (forwarded to the plugin)
+# frame=<pane height>  zoom=<factor>  latency=<ms, holds every answer to look at the skeleton>
+# plugin=lens%3Dgroups or plugin=expand%3Dmetix-dmit-2 (forwarded to the plugin)
 ```
 
 ## Safety boundary

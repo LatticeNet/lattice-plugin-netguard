@@ -1,76 +1,29 @@
 /*
- * NetGuard plugin surface.
+ * NetGuard plugin surface: what is NetGuard's own, on top of the chassis.
  *
- * Three rules shape this file.
+ * The page skeleton (header, stat strip, toolbar, table card, rows, chips,
+ * empty states, overlays) is the shared plugin chassis,
+ * `@latticenet/plugin-bridge/chassis.css`, imported before this sheet. It
+ * declares the fallbacks for the 42 tokens the console publishes and every
+ * `--pc-*` derivation. This sheet adds only what the chassis has no name for:
+ * the exposure cell's port list, the in-place node detail (facts cards, the
+ * listener and interface tables, the generated ruleset), the findings list,
+ * the rule rows under a group, and the editor forms.
  *
- * The frame is a viewport. The host sizes this iframe to fill the console's
- * main region, so this document scrolls inside it and `position: fixed`,
- * `position: sticky` and `vh` resolve against the visible window. Overlays are
- * fixed and centred on it, the column header is sticky, and this document is
- * the only vertical scroller: no block on the page caps its own height.
- *
- * The console owns the type and the palette. Fonts are inherited, colours come
- * from host tokens, and the fallbacks exist for a host that sends none, not as
- * a second design. There is no brand face and no hue of this sheet's own: the
- * accent is whatever `--primary` the host sends, and the only saturated colour
- * beyond it is semantic.
- *
- * Rhythm and shape follow the 2026-09-02 direction: a 4px base, 4px radius on
- * controls (badges may be pills), flat surfaces separated by hairlines and a
- * surface-tone step rather than shadows, 40px rows, and two motion durations
- * on one curve. Motion has a job or does not happen.
- *
- * The content is fluid. This is a fleet table inside a console, so it fills the
- * width the host gives it rather than sitting in a centred column.
+ * Three rules still hold. The frame is a viewport: this document is the only
+ * vertical scroller and no block here caps its own height. The console owns
+ * the type and the palette: fonts are inherited, colours are tokens or mixes
+ * of tokens, and there is no hue of this sheet's own. Rhythm and shape come
+ * from the published scale: 4px base, `--radius-md` on controls,
+ * `--radius-xl` on cards, `--row-h` rows, two durations on one curve.
  */
 
 :root {
-  --ng-font: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
-    "Helvetica Neue", Arial, "PingFang SC", "Microsoft YaHei", sans-serif;
-  --ng-mono: ui-monospace, "SF Mono", "JetBrains Mono", "Menlo", "Consolas", monospace;
-
-  --ng-fg: var(--foreground, #16191d);
-  --ng-bg: var(--background, #f6f7f9);
-  --ng-card: var(--card, #ffffff);
-  --ng-border: var(--border, #d8dce1);
-  --ng-muted: var(--muted-foreground, #616c78);
-  --ng-primary: var(--primary, #1f6fb2);
-  --ng-primary-fg: var(--primary-foreground, #ffffff);
-  --ng-danger: var(--destructive, #b3261e);
-
-  /* Semantic tones.
-     The host's token set has no success or warning colour, so these fall back.
-     A fixed hex cannot serve both themes: a green dark enough to read on white
-     goes muddy on a dark console, which is how a status column stops being
-     readable exactly where it matters. So the fallback is mixed with the host's
-     own foreground, which darkens it on a light theme and lightens it on a dark
-     one. A host that does supply the tokens still wins. */
-  --ng-ok: var(--success, color-mix(in srgb, #16a06a 72%, var(--ng-fg) 28%));
-  --ng-warn: var(--warning, color-mix(in srgb, #c98a00 72%, var(--ng-fg) 28%));
-
-  --ng-tint-ok: color-mix(in srgb, var(--ng-ok) 10%, transparent);
-  --ng-tint-warn: color-mix(in srgb, var(--ng-warn) 12%, transparent);
-  --ng-tint-danger: color-mix(in srgb, var(--ng-danger) 10%, transparent);
-  --ng-tint-muted: color-mix(in srgb, var(--ng-muted) 12%, transparent);
-  --ng-hover: color-mix(in srgb, var(--ng-fg) 5%, transparent);
-  /* The hover tone as an opaque surface, for cells that sit over other cells. */
-  --ng-hover-solid: color-mix(in srgb, var(--ng-fg) 5%, var(--ng-card));
-  --ng-subtle-bg: color-mix(in srgb, var(--ng-fg) 3%, transparent);
-  --ng-subtle-solid: color-mix(in srgb, var(--ng-fg) 3%, var(--ng-card));
-
-  /* Shape: controls are controls, not pills; panels get the next step. */
-  --ng-radius: 4px;
-  --ng-radius-lg: 6px;
-
-  /* Motion: 100ms for hover, focus and pressed; 200ms for expand, collapse
-     and tab changes; one expo-out curve. Reduced motion zeroes both. */
-  --duration-fast: 100ms;
-  --duration-base: 200ms;
-  --ease-out: cubic-bezier(0.19, 1, 0.22, 1);
-
+  --ng-font: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    "Helvetica Neue", "PingFang SC", "Microsoft YaHei", sans-serif;
   font-family: var(--ng-font);
-  color: var(--ng-fg);
-  background: var(--ng-bg);
+  color: var(--foreground);
+  background: var(--background);
   font-synthesis: none;
 }
 
@@ -81,7 +34,7 @@
 body {
   margin: 0;
   min-width: 280px;
-  background: var(--ng-bg);
+  background: var(--background);
 }
 
 h1,
@@ -99,1248 +52,578 @@ ul {
   list-style: none;
 }
 
-button,
-input,
-select,
-textarea {
-  font: inherit;
-  color: inherit;
+/* ── words ───────────────────────────────────────────────────────────────── */
+
+.ng-subtle {
+  color: var(--muted-foreground);
 }
 
-button {
-  cursor: pointer;
-}
-
-button:disabled {
-  cursor: not-allowed;
-  opacity: 0.45;
-}
-
-:focus-visible {
-  outline: 2px solid var(--ng-primary);
-  outline-offset: 2px;
-}
-
-.visually-hidden {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
-}
-
-/* ── shell ───────────────────────────────────────────────────────────────── */
-
-.workspace {
-  width: 100%;
-  padding: 24px clamp(16px, 2.2vw, 32px) 48px;
-}
-
-.masthead {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 12px;
-  padding-bottom: 16px;
-  border-bottom: 1px solid var(--ng-border);
-}
-
-.mark {
-  display: grid;
-  place-items: center;
-  width: 32px;
-  height: 32px;
-  border: 1px solid var(--ng-border);
-  border-radius: var(--ng-radius);
-  color: var(--ng-primary);
-  background: var(--ng-card);
-}
-
-h1 {
-  font-size: 18px;
-  font-weight: 620;
-  letter-spacing: -0.02em;
-}
-
-h2 {
-  font-size: 14px;
-  font-weight: 620;
-  letter-spacing: -0.01em;
-}
-
-h3 {
-  font-size: 12px;
-  font-weight: 640;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--ng-muted);
-}
-
-.mark-copy p,
-.subtle {
-  margin-top: 2px;
-  color: var(--ng-muted);
-  font-size: 12px;
-  line-height: 1.5;
-}
-
-.absent {
-  color: var(--ng-muted);
+.ng-absent {
+  color: var(--muted-foreground);
   font-style: italic;
 }
 
-.danger-text {
-  color: var(--ng-danger);
+.ng-warn-text {
+  color: var(--warning-text);
 }
 
-.warn-text {
-  color: var(--ng-warn);
-}
-
-.pre-line {
+.ng-pre-line {
   white-space: pre-line;
 }
 
-.mono {
-  font-family: var(--ng-mono);
-  font-size: 12px;
-  line-height: 1.5;
-  font-variant-numeric: tabular-nums;
-}
-
-/* ── proof line ──────────────────────────────────────────────────────────
-   The signature element: one mono strip under the title that says when the
-   fleet was observed and what it counted. It is the visual form of "every
-   number here came from a snapshot with a time on it". */
-
-.proof-line {
+/* A column of blocks inside a dialog body or a detail: one gap, no margins. */
+.ng-stack {
   display: flex;
-  flex-wrap: wrap;
-  gap: 4px 8px;
-  margin-top: 12px;
-  color: var(--ng-muted);
-  font-family: var(--ng-mono);
-  font-size: 11px;
-  line-height: 1.5;
-  font-variant-numeric: tabular-nums;
+  flex-direction: column;
+  gap: var(--space-3);
 }
 
-/* ── controls ────────────────────────────────────────────────────────────── */
-
-.button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  min-height: 32px;
-  padding: 6px 12px;
-  border: 1px solid transparent;
-  border-radius: var(--ng-radius);
-  font-size: 12px;
-  font-weight: 620;
-  white-space: nowrap;
-  transition:
-    background-color var(--duration-fast) var(--ease-out),
-    border-color var(--duration-fast) var(--ease-out),
-    color var(--duration-fast) var(--ease-out);
-}
-
-/* The quiet third weight: a text button for actions that undo nothing and
-   change nothing, such as dismissing a finding for the session or paging. */
-.button.ghost {
-  color: var(--ng-muted);
-  background: transparent;
-}
-
-.button.ghost:hover:not(:disabled) {
-  color: var(--ng-fg);
-  background: var(--ng-hover);
-}
-
-.button.secondary {
-  border-color: var(--ng-border);
-  background: var(--ng-card);
-}
-
-.button.primary {
-  color: var(--ng-primary-fg);
-  background: var(--ng-primary);
-}
-
-.button.danger {
-  color: #fff;
-  background: var(--ng-danger);
-}
-
-.button.compact {
-  min-height: 28px;
-  padding: 4px 8px;
-  font-size: 11px;
-}
-
-.button:hover:not(:disabled) {
-  filter: brightness(0.96);
-}
-
-.button:active:not(:disabled) {
-  filter: brightness(0.92);
-}
-
-.icon-button {
-  display: grid;
-  place-items: center;
-  width: 28px;
-  height: 28px;
-  border: 0;
-  border-radius: var(--ng-radius);
-  color: var(--ng-muted);
-  background: transparent;
-  transition:
-    background-color var(--duration-fast) var(--ease-out),
-    color var(--duration-fast) var(--ease-out),
-    opacity var(--duration-fast) var(--ease-out);
-}
-
-.icon-button:hover:not(:disabled) {
-  color: var(--ng-fg);
-  background: var(--ng-hover);
-}
-
-.icon-button.bordered {
-  border: 1px solid var(--ng-border);
-  background: var(--ng-card);
-}
-
-.icon-button.destructive {
-  color: var(--ng-danger);
-}
-
-/* Row actions show on hover and keyboard focus so a dense table reads as
-   data, and stay visible where there is no hover to reveal them. */
-.row-actions {
-  display: inline-flex;
-  justify-content: flex-end;
-  gap: 4px;
-  opacity: 0;
-  transition: opacity var(--duration-fast) var(--ease-out);
-}
-
-tr:hover .row-actions,
-tr:focus-within .row-actions {
-  opacity: 1;
-}
-
-@media (hover: none) {
-  .row-actions {
-    opacity: 1;
-  }
-}
-
-/* ── notices ─────────────────────────────────────────────────────────────── */
-
-.notice {
-  display: flex;
-  align-items: flex-start;
-  gap: 9px;
-  margin-top: 12px;
-  padding: 10px 12px;
-  border: 1px solid var(--ng-border);
-  border-left-width: 3px;
-  border-radius: var(--ng-radius);
-  background: var(--ng-card);
-  font-size: 12px;
-  line-height: 1.5;
-}
-
-.notice > span,
-.notice > div {
-  flex: 1;
-  min-width: 0;
-}
-
-.notice p {
-  margin-top: 3px;
-  line-height: 1.5;
-}
-
-.notice.ok {
-  border-left-color: var(--ng-ok);
-  background: var(--ng-tint-ok);
-}
-
-.notice.warn {
-  border-left-color: var(--ng-warn);
-  background: var(--ng-tint-warn);
-}
-
-.notice.danger {
-  border-left-color: var(--ng-danger);
-  background: var(--ng-tint-danger);
-  color: var(--ng-fg);
-}
-
-/* ── lens switch ─────────────────────────────────────────────────────────
-   Three lenses over one dataset. A tablist, so it reads as a destination
-   inside the page rather than an action. */
-
-.lens-switch {
-  display: inline-flex;
-  gap: 2px;
-  margin: 16px 0 12px;
-  padding: 2px;
-  border: 1px solid var(--ng-border);
-  border-radius: var(--ng-radius-lg);
-  background: var(--ng-card);
-  max-width: 100%;
-  overflow-x: auto;
-}
-
-.lens-tab {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-height: 28px;
-  padding: 4px 12px;
-  border: 0;
-  border-radius: var(--ng-radius);
-  color: var(--ng-muted);
-  background: transparent;
-  font-size: 12px;
-  font-weight: 600;
-  white-space: nowrap;
-  transition:
-    background-color var(--duration-fast) var(--ease-out),
-    color var(--duration-fast) var(--ease-out);
-}
-
-.lens-tab:hover {
-  color: var(--ng-fg);
-}
-
-.lens-tab[aria-selected="true"] {
-  color: var(--ng-fg);
-  background: var(--ng-subtle-solid);
-  box-shadow: inset 0 0 0 1px var(--ng-border);
-}
-
-.lens-count {
-  display: inline-flex;
-  min-width: 18px;
-  height: 18px;
-  align-items: center;
-  justify-content: center;
-  padding: 0 5px;
-  border-radius: 9px;
-  background: var(--ng-tint-muted);
-  font-size: 10px;
-  font-variant-numeric: tabular-nums;
-}
-
-.lens-count[data-tone="danger"] {
-  color: #fff;
-  background: var(--ng-danger);
-}
-
-.pill-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--ng-muted);
-}
-
-.pill[data-tone="ok"] .pill-dot {
-  background: var(--ng-ok);
-}
-
-.pill[data-tone="warn"] .pill-dot {
-  background: var(--ng-warn);
-}
-
-.pill[data-tone="danger"] .pill-dot {
-  background: var(--ng-danger);
-}
-
-.pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 11.5px;
-  font-weight: 600;
-}
-
-.pill[data-tone="ok"] {
-  color: var(--ng-ok);
-}
-
-.pill[data-tone="warn"] {
-  color: var(--ng-warn);
-}
-
-.pill[data-tone="danger"] {
-  color: var(--ng-danger);
-}
-
-.pill[data-tone="muted"] {
-  color: var(--ng-muted);
-}
-
-/* ── toolbar ─────────────────────────────────────────────────────────────── */
-
-.toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin: 12px 0 8px;
-}
-
-.toolbar .subtle {
-  display: inline-flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px;
-}
-
-.search input {
-  width: min(360px, 100%);
-  min-height: 32px;
-  padding: 4px 8px;
-  border: 1px solid var(--ng-border);
-  border-radius: var(--ng-radius);
-  background: var(--ng-card);
-}
-
-/* ── tables ──────────────────────────────────────────────────────────────── */
-
-.panel {
-  margin-top: 12px;
-  border: 1px solid var(--ng-border);
-  border-radius: var(--ng-radius-lg);
-  background: var(--ng-card);
-  /* clip, not hidden: hidden makes a scroll container, which would catch the
-     sticky column header instead of letting it stick to the window. */
-  overflow: clip;
-}
-
-/* The fade at the edges is the only cue that a wide table continues past the
-   frame. Without it a column scrolled out of view reads as a column with
-   nothing in it, which for the drift column is the worst possible misreading.
-   background-attachment local/scroll is what makes the shadows appear only on
-   the side that still has content. */
-.table-scroll {
-  /* A containing block, so the visually hidden labels inside the cells (they
-     are absolutely positioned) stay inside this scroll box instead of
-     widening the document by a pixel past the frame on a phone. */
-  position: relative;
-  width: 100%;
-  overflow-x: auto;
-  background:
-    linear-gradient(to right, var(--ng-card) 30%, transparent) left center / 32px 100% no-repeat local,
-    linear-gradient(to left, var(--ng-card) 30%, transparent) right center / 32px 100% no-repeat local,
-    radial-gradient(farthest-side at 0 50%, color-mix(in srgb, var(--ng-fg) 20%, transparent), transparent)
-      left center / 14px 100% no-repeat scroll,
-    radial-gradient(farthest-side at 100% 50%, color-mix(in srgb, var(--ng-fg) 20%, transparent), transparent)
-      right center / 14px 100% no-repeat scroll;
-}
-
-/* At desktop the tables fit, so the box stops being a scrollport and the
-   column header sticks to the window. Below that the box scrolls sideways,
-   the first column sticks to its left edge, and the header follows the box. */
-@media (min-width: 1024px) {
-  .table-scroll {
-    overflow: visible;
-    background: none;
-  }
-}
-
-table {
-  width: 100%;
-  min-width: 760px;
-  border-collapse: separate;
-  border-spacing: 0;
-  font-size: 12px;
-}
-
-.exposure-table {
-  min-width: 880px;
-}
-
-th {
-  position: sticky;
-  top: 0;
-  z-index: 2;
-  padding: 0;
-  border-bottom: 1px solid var(--ng-border);
-  background: var(--ng-subtle-solid);
-  text-align: left;
-}
-
-th.numeric {
-  text-align: right;
-}
-
-th.actions-head {
-  width: 44px;
-}
-
-/* The node stays put while the row scrolls sideways on a phone; the corner
-   header sits above both edges. */
-.exposure-table th:first-child,
-.exposure-table td.node-cell {
-  position: sticky;
-  left: 0;
-  z-index: 1;
-  min-width: 160px;
-  max-width: 220px;
-  background: var(--ng-card);
-  box-shadow: inset -1px 0 0 var(--ng-border);
-}
-
-.exposure-table th:first-child {
-  z-index: 3;
-  background: var(--ng-subtle-solid);
-}
-
-.exposure-table tr:hover td.node-cell,
-.exposure-table tr[data-selected="true"] td.node-cell {
-  background: var(--ng-hover-solid);
-}
-
-.sort-button {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  width: 100%;
-  min-height: 32px;
-  padding: 4px 12px;
-  border: 0;
-  background: transparent;
-  color: var(--ng-muted);
-  font-size: 10.5px;
-  font-weight: 650;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  transition: color var(--duration-fast) var(--ease-out);
-}
-
-.sort-button:hover,
-th[aria-sort="ascending"] .sort-button,
-th[aria-sort="descending"] .sort-button {
-  color: var(--ng-fg);
-}
-
-/* Headers without a sort button carry the same label style themselves. */
-th:not(:has(.sort-button)) {
-  padding: 8px 12px;
-  color: var(--ng-muted);
-  font-size: 10.5px;
-  font-weight: 650;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-
-th.numeric .sort-button {
-  justify-content: flex-end;
-}
-
-td {
-  height: 40px;
-  padding: 8px 12px;
-  border-bottom: 1px solid color-mix(in srgb, var(--ng-border) 60%, transparent);
-  vertical-align: top;
-  transition: background-color var(--duration-fast) var(--ease-out);
-}
-
-tbody tr:last-child td {
-  border-bottom: 0;
-}
-
-td.actions-cell {
-  width: 44px;
-  padding-right: 8px;
-  text-align: right;
-  white-space: nowrap;
-}
-
-td.numeric {
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-}
-
-td strong {
+/* ── exposure cell ───────────────────────────────────────────────────────── */
+
+/* The port list is mono and stays on one line: a wrapped value breaks the row
+   rhythm, the title carries the whole sentence, and the detail under the row
+   lists every listener. */
+.ng-exposure {
   display: block;
-  font-weight: 620;
-}
-
-td small {
-  display: block;
-  margin-top: 2px;
-  color: var(--ng-muted);
-  font-size: 10.5px;
-  line-height: 1.4;
-}
-
-.row-open {
-  cursor: pointer;
-}
-
-.row-open:hover td {
-  background: var(--ng-hover);
-}
-
-.row-open[data-selected="true"] td {
-  background: color-mix(in srgb, var(--ng-primary) 8%, transparent);
-}
-
-.row-open[data-selected="true"] td.node-cell {
-  background: color-mix(in srgb, var(--ng-primary) 8%, var(--ng-card));
-  box-shadow: inset 2px 0 0 var(--ng-primary), inset -1px 0 0 var(--ng-border);
-}
-
-/* ── exposure cells ─────────────────────────────────────────────────────── */
-
-.exposure-cell {
-  min-width: 260px;
-}
-
-.spans {
-  display: inline;
-  font-family: var(--ng-mono);
-  font-size: 12px;
-  line-height: 1.5;
+  min-width: 220px;
+  max-width: 440px;
+  overflow: hidden;
+  font-family: var(--font-mono);
+  font-size: var(--text-mono);
   font-variant-numeric: tabular-nums;
-  overflow-wrap: anywhere;
-}
-
-.span-sep {
-  color: var(--ng-muted);
-}
-
-/* Ports never break inside a token; the ", " between them is where a long
-   list wraps on a narrow cell. */
-.span-allowed,
-.span-chip {
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-/* An unexplained port is a button: it opens its finding under the table. The
+.ng-exposure .ng-absent,
+.ng-exposure .ng-warn-text {
+  font-family: var(--ng-font);
+  font-size: var(--pc-text-sm);
+}
+
+.ng-span-sep {
+  color: var(--muted-foreground);
+}
+
+/* An unexplained port is a button: it opens its finding under the card. The
    "(!)" and the underline carry "nothing allows this" without the red. */
-.span-chip {
+.ng-span-open {
   display: inline;
   padding: 0 2px;
   margin: 0 -2px;
   border: 0;
-  border-radius: 3px;
-  color: var(--ng-danger);
+  border-radius: var(--radius-sm);
+  color: var(--pc-danger-ink);
   background: transparent;
   font: inherit;
   font-weight: 650;
   text-decoration: underline;
   text-decoration-thickness: 1px;
   text-underline-offset: 3px;
-  transition: background-color var(--duration-fast) var(--ease-out);
+  transition: background-color var(--pc-dur) var(--pc-ease);
 }
 
-.span-chip:hover {
-  background: var(--ng-tint-danger);
+.ng-span-open:hover {
+  background: var(--pc-danger-soft);
 }
 
-.span-chip[data-ignored="true"] {
-  color: var(--ng-muted);
+.ng-span-open[data-ignored="true"] {
+  color: var(--muted-foreground);
   font-weight: 500;
   text-decoration: line-through;
 }
 
-.confined-line,
-.allows-line {
-  color: var(--ng-muted);
-}
-
-.exposure-cell small,
-.managed-cell small,
-.drift-cell small,
-.seen-cell small {
-  display: block;
+/* The confined line under the open list: a gated port is a kind chip, any
+   other confinement is a muted sentence. */
+.ng-confined {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: var(--space-1);
   margin-top: 2px;
+  overflow: hidden;
+  color: var(--muted-foreground);
+  line-height: 18px;
 }
 
-/* While the box can still scroll right, its edge fades and a caption below
-   names what is past it. Both go when the operator reaches the end. */
-.table-scroll::after {
-  content: "";
-  position: absolute;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  width: 40px;
-  background: linear-gradient(to left, var(--ng-card), transparent);
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity var(--duration-fast) var(--ease-out);
-}
-
-.table-scroll[data-more-right="true"]::after {
-  opacity: 1;
-}
-
-.table-hint {
-  padding: 8px 12px;
-  border-top: 1px solid var(--ng-border);
-  color: var(--ng-muted);
-  font-size: 11px;
-  line-height: 1.5;
-}
-
-.error-state .pre-line {
-  max-width: 62ch;
-}
-
-.error-state .button {
-  margin-top: 4px;
-}
-
-.seen-cell {
+.ng-confined-item {
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.seen-cell[data-tone="unknown"] {
-  color: var(--ng-muted);
+.ng-confined .pc-kind {
+  flex: 0 0 auto;
+  font-family: var(--font-mono);
 }
 
-.seen-cell[data-tone="stale"] {
-  color: var(--ng-warn);
-}
+/* ── rules under a group ─────────────────────────────────────────────────── */
 
-/* ── findings under the table ───────────────────────────────────────────── */
-
-.findings-list {
-  margin-top: 12px;
-  border: 1px solid var(--ng-border);
-  border-radius: var(--ng-radius-lg);
-  background: var(--ng-card);
-}
-
-.findings-head {
-  padding: 12px 16px;
-  border-bottom: 1px solid var(--ng-border);
-  background: var(--ng-subtle-bg);
-}
-
-.finding-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  column-gap: 12px;
-  border-bottom: 1px solid color-mix(in srgb, var(--ng-border) 60%, transparent);
-}
-
-.finding-row:last-child {
-  border-bottom: 0;
-}
-
-.finding-toggle {
+.ng-rule-line {
   display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  min-height: 40px;
-  padding: 10px 16px;
-  border: 0;
-  background: transparent;
-  color: inherit;
-  font-size: 12.5px;
-  line-height: 1.5;
-  text-align: left;
-  transition: background-color var(--duration-fast) var(--ease-out);
-}
-
-.finding-toggle:hover {
-  background: var(--ng-hover);
-}
-
-.finding-chevron {
-  flex: none;
-  margin-top: 3px;
-  color: var(--ng-muted);
-  transition: transform var(--duration-base) var(--ease-out);
-}
-
-.finding-row[data-open="true"] .finding-chevron {
-  transform: rotate(90deg);
-}
-
-.finding-text {
+  align-items: center;
+  gap: var(--space-2);
   min-width: 0;
-  overflow-wrap: anywhere;
 }
 
-.finding-actions {
-  display: inline-flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px 8px;
-  padding-right: 12px;
+.ng-rule-index {
+  flex: 0 0 16px;
+  color: var(--muted-foreground);
+  text-align: right;
 }
 
-.finding-static {
-  flex-wrap: wrap;
-  cursor: default;
-}
-
-.finding-static:hover {
-  background: transparent;
-}
-
-.finding-row[data-ignored="true"] .finding-text {
-  color: var(--ng-muted);
-}
-
-.finding-ignored,
-.finding-readonly {
-  color: var(--ng-muted);
-  font-size: 11.5px;
-  line-height: 1.5;
-}
-
-.finding-ignored {
-  flex-basis: 100%;
-}
-
-.finding-note {
-  font-size: 11.5px;
-}
-
-/* Expand and collapse as a grid track from 0fr to 1fr: interruptible, no
-   measured height, and reduced motion drops the duration to nothing. */
-.finding-body {
-  grid-column: 1 / -1;
-  display: grid;
-  grid-template-rows: 0fr;
-  transition: grid-template-rows var(--duration-base) var(--ease-out);
-}
-
-.finding-row[data-open="true"] .finding-body {
-  grid-template-rows: 1fr;
-}
-
-.finding-body-inner {
-  min-height: 0;
+.ng-rule-sentence {
+  min-width: 0;
   overflow: hidden;
-  padding: 0 16px 0 38px;
-  font-size: 12.5px;
-  line-height: 1.5;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.finding-row[data-open="true"] .finding-body-inner {
-  padding-bottom: 12px;
+.ng-rule[data-disabled="true"] .ng-rule-sentence {
+  color: var(--muted-foreground);
+  text-decoration: line-through;
 }
 
-.finding-body-inner > * + * {
-  margin-top: 8px;
-}
+/* ── node detail, folded under its row ───────────────────────────────────── */
 
-.finding-facts {
-  display: grid;
-  grid-template-columns: max-content minmax(0, 1fr);
-  gap: 2px 12px;
-  font-size: 12px;
-}
-
-.finding-facts dt {
-  color: var(--ng-muted);
-}
-
-.finding-review .spin {
-  vertical-align: -2px;
-  margin-right: 6px;
-}
-
-.rule-summary li {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 7px;
-  padding: 2px 0;
-}
-
-.rule-summary li[data-disabled="true"] {
-  opacity: 0.45;
-}
-
-.rule-action {
-  flex: none;
-  font-size: 9.5px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-
-.rule-action[data-action="allow"] {
-  color: var(--ng-ok);
-}
-
-.rule-action[data-action="deny"] {
-  color: var(--ng-danger);
-}
-
-.rule-summary li[data-disabled="true"] .rule-action {
-  color: var(--ng-muted);
-}
-
-.loading,
-.empty {
+.ng-detail {
   display: flex;
   flex-direction: column;
+  gap: var(--space-3);
+  padding-top: var(--space-3);
+  font-size: var(--pc-text-sm);
+  line-height: 1.5;
+}
+
+.ng-detail-actions {
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  justify-content: center;
-  gap: 8px;
-  min-height: 160px;
-  padding: 24px;
-  color: var(--ng-muted);
-  font-size: 12px;
-  text-align: center;
+  justify-content: flex-end;
+  gap: var(--space-2);
 }
 
-.loading {
-  flex-direction: row;
+.ng-detail-note {
+  margin-right: auto;
+  color: var(--muted-foreground);
+  font-size: var(--pc-text-xs);
 }
 
-.empty strong {
-  color: var(--ng-fg);
-}
-
-/* ── node detail ─────────────────────────────────────────────────────────── */
-
-.detail {
-  padding: 0 0 16px;
-}
-
-.detail-head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 14px 16px;
-  border-bottom: 1px solid var(--ng-border);
-}
-
-.detail-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 7px;
-}
-
-.detail > .notice,
-.detail > .findings,
-.detail > .subpanel,
-.detail > .detail-grid {
-  margin: 12px 16px 0;
-}
-
-.detail-grid {
+.ng-cards {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-  gap: 12px;
+  gap: var(--space-3);
 }
 
-.detail-card {
+.ng-card {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 12px;
-  border: 1px solid var(--ng-border);
-  border-radius: var(--ng-radius-lg);
-  background: var(--ng-subtle-bg);
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--card);
 }
 
-.detail-card p {
-  font-size: 12px;
+.ng-card h3,
+.ng-subpanel-head h3 {
+  font-size: var(--pc-text-xs);
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+
+.ng-card p {
+  font-size: var(--pc-text-xs);
   line-height: 1.5;
 }
 
 /* Stacked, not two columns: the values here are 64 character hashes and the
    whole point of the card is holding two of them side by side to be compared,
    which needs the full card width per value. */
-.kv {
+.ng-kv {
   display: grid;
+  width: 100%;
   grid-template-columns: minmax(0, 1fr);
   gap: 1px;
-  font-size: 11.5px;
+  font-size: var(--pc-text-xs);
 }
 
-.kv dt {
-  margin-top: 5px;
+.ng-kv dt {
+  margin-top: var(--space-1);
+  color: var(--muted-foreground);
+  font-size: var(--pc-text-label);
+  font-weight: 600;
 }
 
-.kv dt:first-child {
+.ng-kv dt:first-child {
   margin-top: 0;
 }
 
-.kv dt {
-  color: var(--ng-muted);
-  font-size: 10.5px;
-}
-
-.kv dd {
+.ng-kv dd {
   min-width: 0;
   overflow-wrap: anywhere;
 }
 
-.findings {
+.ng-kv-inline {
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: var(--space-1) var(--space-3);
+}
+
+.ng-kv-inline dt {
+  margin-top: 0;
+}
+
+.ng-lint {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--space-2);
 }
 
-.finding {
+.ng-lint-row {
   display: flex;
   align-items: flex-start;
-  gap: 9px;
-  padding: 10px 12px;
-  border: 1px solid var(--ng-border);
-  border-left-width: 3px;
-  border-radius: var(--ng-radius);
-  font-size: 12px;
-}
-
-.finding[data-severity="block"] {
-  border-left-color: var(--ng-danger);
-  background: var(--ng-tint-danger);
-}
-
-.finding[data-severity="warn"] {
-  border-left-color: var(--ng-warn);
-  background: var(--ng-tint-warn);
-}
-
-.finding p {
-  margin-top: 3px;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--pc-warn-border);
+  border-radius: var(--radius-md);
+  background: var(--pc-warn-soft);
+  font-size: var(--pc-text-xs);
   line-height: 1.5;
 }
 
-.subpanel {
-  border: 1px solid var(--ng-border);
-  border-radius: var(--ng-radius-lg);
-  overflow: clip;
+.ng-lint-row[data-severity="block"] {
+  border-color: var(--pc-danger-border);
+  background: var(--pc-danger-soft);
 }
 
-.subpanel-head {
+.ng-lint-row .pc-state-dot {
+  flex: 0 0 auto;
+  margin-top: 2px;
+}
+
+.ng-subpanel {
+  overflow: clip;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--card);
+}
+
+.ng-subpanel-head {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
-  padding: 10px 12px;
-  border-bottom: 1px solid var(--ng-border);
-  background: var(--ng-subtle-bg);
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--border);
+  background: var(--pc-head-surface);
 }
 
-.subpanel-head p {
+.ng-subpanel-head p {
   flex-basis: 100%;
-  color: var(--ng-muted);
-  font-size: 11.5px;
+  color: var(--muted-foreground);
+  font-size: var(--pc-text-xs);
   line-height: 1.5;
 }
 
-.subpanel-body {
-  padding: 12px;
-  font-size: 12px;
+.ng-subpanel-body {
+  padding: var(--space-3);
+  font-size: var(--pc-text-xs);
+}
+
+/* The facts tables inside a detail: a plain table on the row rhythm, with
+   no sticky header (the detail scrolls with the page) and no chevrons. */
+.ng-facts-wrap {
+  overflow-x: auto;
+}
+
+.ng-facts {
+  width: 100%;
+  min-width: 520px;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: var(--pc-text-xs);
+}
+
+.ng-facts th {
+  height: 28px;
+  padding: 0 var(--space-3);
+  color: var(--muted-foreground);
+  font-size: var(--pc-text-label);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-align: left;
+  text-transform: uppercase;
+  white-space: nowrap;
+  box-shadow: inset 0 -1px 0 var(--border);
+}
+
+.ng-facts td {
+  height: var(--row-h-compact);
+  padding: 0 var(--space-3);
+  border-bottom: 1px solid var(--pc-hairline);
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+.ng-facts tr:last-child td {
+  border-bottom: 0;
+}
+
+.ng-facts td strong {
+  font-weight: 650;
 }
 
 /* No height cap: a ruleset is tens of lines and the page is the scroller. Long
    lines scroll sideways inside the block rather than widening the table. */
-.code {
+.ng-code {
   margin: 0;
-  padding: 12px;
+  padding: var(--space-3);
   overflow-x: auto;
-  background: var(--ng-subtle-bg);
-  font-family: var(--ng-mono);
-  font-size: 11.5px;
+  background: var(--pc-head-surface);
+  font-family: var(--font-mono);
+  font-size: var(--text-mono);
   line-height: 1.55;
   white-space: pre;
 }
 
-.diff-line {
+.ng-diff-line {
   display: block;
 }
 
-.diff-line[data-kind="add"] {
-  background: var(--ng-tint-ok);
-  color: var(--ng-ok);
+.ng-diff-line[data-kind="add"] {
+  background: var(--pc-ok-soft);
+  color: var(--success-text);
 }
 
-.diff-line[data-kind="remove"] {
-  background: var(--ng-tint-danger);
-  color: var(--ng-danger);
+.ng-diff-line[data-kind="remove"] {
+  background: var(--pc-danger-soft);
+  color: var(--pc-danger-ink);
 }
 
-.diff-gap {
+.ng-diff-gap {
   display: block;
-  color: var(--ng-muted);
-  background: var(--ng-tint-muted);
+  color: var(--muted-foreground);
+  background: var(--pc-neutral-soft);
   font-style: italic;
 }
 
-/* ── overlays ────────────────────────────────────────────────────────────── */
+/* ── the attention list (findings) ───────────────────────────────────────── */
 
-/* Fixed, and centred on the window the operator can see. */
-.overlay-root {
-  position: fixed;
-  inset: 0;
-  z-index: 40;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.overlay-scrim {
-  position: absolute;
-  inset: 0;
-  /* A dark tint in both themes. Mixing the foreground brightened the page
-     behind a dialog on a dark console instead of dimming it. */
-  background: color-mix(in srgb, #05070a 58%, transparent);
-}
-
-.overlay-panel {
-  /* A column, so the head and the foot stay put and only the body scrolls.
-     The body is the one inner scroller this surface allows, because a fixed
-     modal is not on the page and the page cannot scroll it into view. */
-  position: relative;
-  z-index: 1;
+.ng-attn {
   display: flex;
   flex-direction: column;
-  min-height: 0;
-  max-height: calc(100% - 24px);
-  width: min(720px, calc(100% - 24px));
-  border: 1px solid var(--ng-border);
-  border-radius: var(--ng-radius-lg);
-  background: var(--ng-card);
-  /* The one shadow on the surface, tinted with the accent rather than black. */
-  box-shadow:
-    0 16px 48px color-mix(in srgb, var(--ng-primary) 6%, color-mix(in srgb, var(--ng-fg) 18%, transparent)),
-    0 1px 2px color-mix(in srgb, var(--ng-fg) 8%, transparent);
 }
 
-.overlay-panel.wide {
-  width: min(1040px, calc(100% - 24px));
-}
-
-.overlay-panel.narrow {
-  width: min(440px, calc(100% - 24px));
-}
-
-.overlay-head,
-.overlay-foot {
-  display: flex;
-  flex: none;
+.ng-attn-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 13px 15px;
+  gap: var(--space-2) var(--space-3);
+  min-height: var(--row-h);
+  padding: var(--space-2) var(--space-4);
+  border-bottom: 1px solid var(--pc-hairline);
+  font-size: var(--pc-text-sm);
+  transition: background-color var(--pc-dur) var(--pc-ease);
 }
 
-.overlay-head {
-  border-bottom: 1px solid var(--ng-border);
+.ng-attn-row:last-child {
+  border-bottom: 0;
 }
 
-.overlay-foot {
-  justify-content: flex-end;
-  border-top: 1px solid var(--ng-border);
+.ng-attn-row:hover {
+  background-color: var(--pc-hover);
 }
 
-.overlay-title h2 {
-  font-size: 14px;
+.ng-attn-row[data-open="true"] {
+  background-color: var(--pc-open-surface);
 }
 
-.overlay-title p {
-  margin-top: 2px;
-  color: var(--ng-muted);
-  font-size: 11.5px;
-  line-height: 1.5;
+.ng-attn-row[data-ignored="true"] .ng-attn-claim > span {
+  color: var(--muted-foreground);
 }
 
-.overlay-body {
-  /* Whatever the window leaves after the head and the foot. */
-  flex: 1;
-  min-height: 0;
-  padding: 14px 15px;
-  overflow-y: auto;
+/* Inside a detail the rows sit on the open surface already; a bordered block
+   keeps them apart from the cards. */
+.ng-detail .ng-attn {
+  border: 1px solid var(--pc-danger-border);
+  border-radius: var(--radius-lg);
+  background: var(--card);
 }
 
-.overlay-body > .subpanel,
-.overlay-body > .notice:first-child {
-  margin-top: 0;
+.ng-detail .ng-attn-row {
+  padding: var(--space-2) var(--space-3);
 }
 
-.overlay-body > * + * {
-  margin-top: 12px;
+.ng-attn-row > .pc-state-dot {
+  min-width: 52px;
+}
+
+.ng-attn-toggle {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: var(--space-2);
+  border: 0;
+  border-radius: var(--radius-sm);
+  padding: 0;
+  color: inherit;
+  background: transparent;
+  font: inherit;
+  text-align: left;
+}
+
+.ng-attn-chevron {
+  flex: 0 0 auto;
+  color: var(--muted-foreground);
+  transition: transform var(--pc-dur) var(--pc-ease);
+}
+
+.ng-attn-row[data-open="true"] .ng-attn-chevron {
+  transform: rotate(90deg);
+}
+
+.ng-attn-claim {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+  line-height: 1.4;
+}
+
+.ng-attn-claim small {
+  color: var(--muted-foreground);
+  font-size: var(--pc-text-xs);
+}
+
+.ng-attn-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.ng-attn-readonly {
+  color: var(--muted-foreground);
+  font-size: var(--pc-text-xs);
+}
+
+.ng-attn-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  grid-column: 2 / -1;
+  padding-bottom: var(--space-1);
+  font-size: var(--pc-text-xs);
+  line-height: 1.55;
+}
+
+.ng-attn-body p {
+  max-width: var(--pc-measure);
+}
+
+.ng-attn-review {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
 }
 
 /* ── forms ───────────────────────────────────────────────────────────────── */
 
-.form-grid {
+.ng-form-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 11px;
+  gap: var(--space-3);
 }
 
-.field {
+.ng-field {
   display: flex;
   min-width: 0;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--space-1);
 }
 
-.field > span {
-  color: var(--ng-muted);
-  font-size: 10.5px;
-  font-weight: 620;
+.ng-field > span {
+  color: var(--muted-foreground);
+  font-size: var(--pc-text-label);
+  font-weight: 600;
 }
 
-.field.span-2 {
+.ng-span-2 {
   grid-column: 1 / -1;
 }
 
-.field input,
-.field select {
+.ng-field input,
+.ng-field select {
   width: 100%;
-  min-height: 32px;
-  padding: 5px 8px;
-  border: 1px solid var(--ng-border);
-  border-radius: var(--ng-radius);
-  background: var(--ng-card);
+  min-height: 34px;
+  padding: 6px var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  color: var(--foreground);
+  background: var(--card);
+  font: inherit;
+  font-size: var(--pc-text-sm);
 }
 
-.field.check,
-.check {
+.ng-field input:focus,
+.ng-field select:focus {
+  outline: 0;
+  border-color: var(--ring);
+  box-shadow: 0 0 0 3px var(--pc-ring-soft);
+}
+
+.ng-field input:disabled,
+.ng-field select:disabled {
+  opacity: 0.5;
+}
+
+.ng-check {
   display: flex;
-  flex-direction: row;
   align-items: flex-start;
-  gap: 8px;
-  font-size: 12px;
+  gap: var(--space-2);
+  font-size: var(--pc-text-sm);
+  line-height: 1.45;
 }
 
-.check input {
-  width: 15px;
-  min-height: 15px;
-  margin-top: 2px;
+.ng-check input {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  margin: 2px 0 0;
+  accent-color: var(--primary);
 }
 
-.check span {
+.ng-check > span {
   display: flex;
   flex-direction: column;
   gap: 1px;
 }
 
-.check small {
-  color: var(--ng-muted);
-  font-size: 10.5px;
-  line-height: 1.45;
+.ng-check small {
+  color: var(--muted-foreground);
+  font-size: var(--pc-text-xs);
 }
 
-.rule-editor {
+.ng-check-inline {
+  align-items: center;
+  white-space: nowrap;
+}
+
+.ng-check-inline input {
+  margin-top: 0;
+}
+
+.ng-managed {
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+.ng-rule-editor {
   display: flex;
   flex-direction: column;
 }
@@ -1348,170 +631,98 @@ td small {
 /* Flex, not grid with auto-fit. auto-fit derives its track count from the
    available width, not from the number of items, so the ten cells in a rule row
    overflowed into implicit rows: the "Disabled" label was crushed into the
-   28px trailing track and read as "Di", and the remove button landed under the
-   row index instead of at the end of the row. Wrapping flex gives each field a
+   trailing track and read as "Di", and the remove button landed under the row
+   index instead of at the end of the row. Wrapping flex gives each field a
    floor it cannot be squeezed below and keeps remove last at every width. */
-.rule-edit {
+.ng-rule-edit {
   display: flex;
   flex-wrap: wrap;
   align-items: flex-end;
-  gap: 8px;
-  padding: 10px 12px;
-  border-bottom: 1px solid color-mix(in srgb, var(--ng-border) 60%, transparent);
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--pc-hairline);
 }
 
-.rule-edit .field {
+.ng-rule-edit:last-child {
+  border-bottom: 0;
+}
+
+.ng-rule-edit .ng-field {
   flex: 1 1 122px;
   min-width: 0;
 }
 
-.rule-edit .field.check {
+.ng-rule-edit .ng-check-inline {
   flex: 0 0 auto;
-  align-items: center;
-  white-space: nowrap;
+  min-height: 34px;
 }
 
-.rule-edit .icon-button {
-  flex: 0 0 auto;
-  margin-left: auto;
-}
-
-.rule-edit:last-child {
-  border-bottom: 0;
-}
-
-.rule-index {
+.ng-rule-edit .ng-rule-index {
   flex: 0 0 20px;
   align-self: center;
-  color: var(--ng-muted);
-  font-size: 10.5px;
-  font-variant-numeric: tabular-nums;
   text-align: center;
 }
 
-.managed-toggle {
-  display: flex;
-  align-items: flex-start;
-  gap: 9px;
-  padding: 12px;
-  border: 1px solid var(--ng-border);
-  border-radius: var(--ng-radius);
-  font-size: 12px;
+.ng-rule-edit .pc-icon-button {
+  margin-left: auto;
 }
 
-.binding-grid {
+.ng-binding-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 12px;
+  gap: var(--space-3);
 }
 
-.binding-grid fieldset {
+.ng-binding-grid fieldset {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 8px;
-  border: 1px solid var(--ng-border);
-  border-radius: var(--ng-radius);
+  gap: var(--space-2);
+  margin: 0;
+  padding: var(--space-2) var(--space-3) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
 }
 
-.binding-grid legend {
-  padding: 0 4px;
-  font-size: 10.5px;
-  font-weight: 640;
+.ng-binding-grid legend {
+  padding: 0 var(--space-1);
+  font-size: var(--pc-text-label);
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
 }
 
-.confirm {
-  display: flex;
-  flex-direction: column;
-  gap: 11px;
-  font-size: 12.5px;
-  line-height: 1.55;
-}
-
-/* Motion is limited to the one indicator that means "still working". */
-.spin {
-  animation: ng-spin 0.9s linear infinite;
-}
-
-@keyframes ng-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  :root {
-    --duration-fast: 0ms;
-    --duration-base: 0ms;
-  }
-
-  .spin {
-    animation: none;
-  }
-}
+/* ── narrow frames ───────────────────────────────────────────────────────── */
 
 @media (max-width: 720px) {
-  .workspace {
-    padding: 16px 16px 32px;
+  .ng-exposure {
+    min-width: 0;
+    max-width: 260px;
   }
 
-  .masthead {
+  .ng-attn-row {
     grid-template-columns: auto minmax(0, 1fr);
   }
 
-  .masthead > .button {
-    grid-column: 1 / -1;
-    width: 100%;
+  .ng-attn-actions {
+    grid-column: 2;
+    justify-content: flex-start;
   }
+}
 
-  .toolbar {
-    align-items: stretch;
-    flex-direction: column;
-  }
+/* In the stacked row the exposure cell is a full-width line and may wrap:
+   the sideways scroll is gone, so the ports have to be readable in place. */
+.pc-table[data-stacked="true"] .ng-exposure {
+  max-width: none;
+  overflow: visible;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
 
-  .search input {
-    width: 100%;
-  }
+.pc-table[data-stacked="true"] .ng-confined {
+  flex-wrap: wrap;
+}
 
-  .overlay-panel {
-    width: calc(100% - 16px);
-  }
-
-  /* The exposure column wraps and the suggestion rows stack. The node column
-     stays sticky inside the sideways-scrolling table. */
-  /* The node and the ports fit the visible box together; the ports wrap at
-     the commas and the other columns scroll in from the right. */
-  .exposure-table {
-    min-width: 640px;
-  }
-
-  .exposure-cell {
-    width: 180px;
-    min-width: 180px;
-    max-width: 180px;
-  }
-
-  .exposure-table td.node-cell {
-    min-width: 132px;
-    max-width: 150px;
-  }
-
-  .exposure-table td.node-cell strong,
-  .exposure-table td.node-cell small {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .finding-row {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .finding-actions {
-    padding: 0 16px 12px 38px;
-  }
-
-  .finding-row[data-open="true"] .finding-actions {
-    order: 3;
-  }
+.pc-table[data-stacked="true"] .ng-detail {
+  padding-top: var(--space-2);
 }

@@ -6,7 +6,8 @@
  */
 import { reactive, watch } from "vue";
 
-import ModalDialog from "./ModalDialog.vue";
+import { PcButton, PcModal, PcNotice } from "@latticenet/plugin-bridge/chassis";
+
 import type { GuardNode, GuardZone, SecurityGroup } from "../netguardModel";
 
 const props = defineProps<{
@@ -49,6 +50,10 @@ function toggle(list: string[], id: string, checked: boolean): void {
   list.splice(0, list.length, ...next);
 }
 
+function close(): void {
+  if (!props.saving) emit("close");
+}
+
 function submit(): void {
   if (!props.node) return;
   emit("save", {
@@ -63,66 +68,67 @@ function submit(): void {
 </script>
 
 <template>
-  <ModalDialog
+  <PcModal
     :open="open"
-    :busy="saving"
     :title="`Binding for ${node?.node_name || node?.node_id || 'node'}`"
-    subtitle="Zones are accepted first, then attached security groups, then the default drop."
-    @close="emit('close')"
+    description="Zones are accepted first, then attached security groups, then the default drop."
+    @close="close"
   >
-    <label class="managed-toggle">
-      <input v-model="form.managed" type="checkbox" />
-      <span>
-        <strong>NetGuard controls this node's firewall</strong>
-        <small>
-          Turned off, the node stays visible and keeps reporting, but no plan can be compiled or
-          applied for it. Its existing rules are left alone.
-        </small>
-      </span>
-    </label>
+    <div class="ng-stack">
+      <label class="ng-check ng-managed">
+        <input v-model="form.managed" type="checkbox" />
+        <span>
+          <strong>NetGuard controls this node's firewall</strong>
+          <small>
+            Turned off, the node stays visible and keeps reporting, but no plan can be compiled or
+            applied for it. Its existing rules are left alone.
+          </small>
+        </span>
+      </label>
 
-    <div class="binding-grid">
-      <fieldset>
-        <legend>Security groups</legend>
-        <p v-if="!groups.length" class="subtle">
-          No security groups exist yet. Create one on the Security groups tab, then attach it here.
-        </p>
-        <label v-for="group in groups" :key="group.id" class="check">
-          <input
-            type="checkbox"
-            :checked="form.groups.includes(group.id)"
-            @change="toggle(form.groups, group.id, ($event.target as HTMLInputElement).checked)"
-          />
-          <span>
-            <strong>{{ group.name }}</strong>
-            <small>{{ group.rules?.length ?? 0 }} rules</small>
-          </span>
-        </label>
-      </fieldset>
-      <fieldset>
-        <legend>Trusted zones</legend>
-        <p v-if="!zones.length" class="subtle">
-          No zones exist yet. Create one on the Trusted zones tab to keep a management path open.
-        </p>
-        <label v-for="zone in zones" :key="zone.id" class="check">
-          <input
-            type="checkbox"
-            :checked="form.zones.includes(zone.id)"
-            @change="toggle(form.zones, zone.id, ($event.target as HTMLInputElement).checked)"
-          />
-          <span>
-            <strong>{{ zone.name }}</strong>
-            <small>{{ zone.builtin ? 'built in, resolved per node' : (zone.interfaces ?? []).join(', ') || 'no interfaces' }}</small>
-          </span>
-        </label>
-      </fieldset>
+      <div class="ng-binding-grid">
+        <fieldset>
+          <legend>Security groups</legend>
+          <p v-if="!groups.length" class="ng-subtle">
+            No security groups exist yet. Create one on the Groups tab, then attach it here.
+          </p>
+          <label v-for="group in groups" :key="group.id" class="ng-check">
+            <input
+              type="checkbox"
+              :checked="form.groups.includes(group.id)"
+              @change="toggle(form.groups, group.id, ($event.target as HTMLInputElement).checked)"
+            />
+            <span>
+              <strong>{{ group.name }}</strong>
+              <small>{{ group.rules?.length ?? 0 }} rules</small>
+            </span>
+          </label>
+        </fieldset>
+        <fieldset>
+          <legend>Trusted zones</legend>
+          <p v-if="!zones.length" class="ng-subtle">
+            No zones exist yet. Create one on the Zones tab to keep a management path open.
+          </p>
+          <label v-for="zone in zones" :key="zone.id" class="ng-check">
+            <input
+              type="checkbox"
+              :checked="form.zones.includes(zone.id)"
+              @change="toggle(form.zones, zone.id, ($event.target as HTMLInputElement).checked)"
+            />
+            <span>
+              <strong>{{ zone.name }}</strong>
+              <small>{{ zone.builtin ? 'built in, resolved per node' : (zone.interfaces ?? []).join(', ') || 'no interfaces' }}</small>
+            </span>
+          </label>
+        </fieldset>
+      </div>
+
+      <PcNotice v-if="error"><p>{{ error }}</p></PcNotice>
     </div>
 
-    <p v-if="error" class="notice danger"><span>{{ error }}</span></p>
-
     <template #footer>
-      <button class="button secondary" type="button" :disabled="saving" @click="emit('close')">Cancel</button>
-      <button class="button primary" type="button" :disabled="saving" @click="submit">Save binding</button>
+      <PcButton :disabled="saving" @click="close">Cancel</PcButton>
+      <PcButton variant="primary" :busy="saving" @click="submit">Save binding</PcButton>
     </template>
-  </ModalDialog>
+  </PcModal>
 </template>

@@ -7,6 +7,12 @@
  * should be allowed (groups and zones), and what exactly will change if I
  * apply (the per-node review and its diff).
  *
+ * The page is built on the shared plugin chassis, in the reading order every
+ * plugin frame shares: header and proof line, notices, the stat strip, the
+ * toolbar with the lens tabs, then one table card per lens whose rows fold
+ * their detail underneath. The look lives in the chassis sheet; this file
+ * owns the facts and the flow.
+ *
  * Two constraints shape everything below. The frame the host renders this in
  * is a viewport the host sizes itself, so this document is the one scroller
  * and overlays are fixed against the window; nothing here measures the page
@@ -15,40 +21,49 @@
  * panel at all.
  */
 import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
-import {
-  Boxes,
-  CheckCircle2,
-  CircleAlert,
-  LoaderCircle,
-  Pencil,
-  Plus,
-  RefreshCw,
-  Shield,
-  ShieldCheck,
-  Trash2,
-  X,
-} from "@lucide/vue";
+import { Boxes, Plus, Radar, RefreshCw, Shield, ShieldCheck } from "@lucide/vue";
 
 import { BridgeClient, canCall, type HostInit } from "@latticenet/plugin-bridge";
+import {
+  PcButton,
+  PcConfirmDialog,
+  PcCount,
+  PcEmptyState,
+  PcLensTab,
+  PcLensTabs,
+  PcNotice,
+  PcPageHeader,
+  PcPagination,
+  PcPanel,
+  PcPanelHeader,
+  PcProofLine,
+  PcSearchField,
+  PcSkeleton,
+  PcStatCard,
+  PcStatStrip,
+  PcToolbar,
+  PcWorkspace,
+  useDocumentQueryState,
+  useExpandSet,
+  useOverlayEscape,
+} from "@latticenet/plugin-bridge/chassis";
 
 import ApplyDialog from "./components/ApplyDialog.vue";
 import BindingEditor from "./components/BindingEditor.vue";
 import ExposureFindings from "./components/ExposureFindings.vue";
 import ExposureTable, { type DetailState, type ExposureRowView } from "./components/ExposureTable.vue";
 import GroupEditor from "./components/GroupEditor.vue";
-import ModalDialog from "./components/ModalDialog.vue";
+import GroupsTable from "./components/GroupsTable.vue";
 import NodeDetail from "./components/NodeDetail.vue";
 import ZoneEditor from "./components/ZoneEditor.vue";
+import ZonesTable from "./components/ZonesTable.vue";
 import {
-  allowsPreview,
   compareExposure,
   computeExposure,
   draftRuleFor,
   findingsFor,
   formatProcesses,
   newestCollectedAt,
-  ruleSentence,
-  usedByNodes,
   type ExposureContext,
   type ExposureSortKey,
   type Finding,
@@ -106,25 +121,29 @@ const bootError = ref("");
 
 /* The plugin document's own query string can open a lens, a search or a node,
  * so a host, a reviewer or an agent can deep-link a state (`?lens=groups`,
- * `?q=postgres`, `?node=…`). The nonce lives in the fragment and is left alone. */
-const documentQuery = new URLSearchParams(window.location.search);
-const requestedLens = documentQuery.get("lens");
+ * `?q=postgres`, `?expand=<node_id>`; the older `?node=` still opens one). The
+ * nonce lives in the fragment and is left alone. */
+const documentQuery = useDocumentQueryState();
+const requestedLens = documentQuery.read("lens")[0];
 const lens = ref<Lens>(LENSES.includes(requestedLens as Lens) ? (requestedLens as Lens) : "exposure");
-const search = ref(documentQuery.get("q") ?? "");
-const selectedNodeId = ref(documentQuery.get("node") ?? "");
+const search = ref(documentQuery.read("q")[0] ?? "");
+/** Node ids whose detail is open in place under their row. */
+const expanded = useExpandSet([...documentQuery.read("expand"), ...documentQuery.read("node")]);
+/** Security group ids whose rules are unfolded. */
+const groupsOpen = useExpandSet();
 
-watch([lens, search, selectedNodeId], () => {
+watch([lens, search, expanded.keys], () => {
   try {
-    const url = new URL(window.location.href);
-    const set = (key: string, value: string) => (value ? url.searchParams.set(key, value) : url.searchParams.delete(key));
-    set("lens", lens.value === "exposure" ? "" : lens.value);
-    set("q", search.value.trim());
-    set("node", selectedNodeId.value);
-    window.history.replaceState(null, "", url);
+    documentQuery.write("lens", lens.value === "exposure" ? [] : [lens.value]);
+    documentQuery.write("q", search.value.trim() ? [search.value.trim()] : []);
+    documentQuery.write("node", []);
+    documentQuery.write("expand", [...expanded.keys.value]);
   } catch {
     // A sandbox that refuses history writes still renders; the link is a convenience.
   }
 });
+
+useOverlayEscape();
 
 let bridge: BridgeClient | undefined;
 try {
@@ -267,7 +286,7 @@ async function refresh(background = false): Promise<void> {
   loading.value = false;
   refreshing.value = false;
   // A node opened by URL needs its review the same way a clicked one does.
-  if (!background && selectedNodeId.value) void loadSelectedReview();
+  if (!background) for (const nodeId of expanded.keys.value) void loadReviewFor(nodeId);
   await loadDetails(epoch);
 }
 
@@ -331,10 +350,8 @@ const matchedViews = computed(() => {
 
 const page = ref(1);
 const pageCount = computed(() => Math.max(1, Math.ceil(matchedViews.value.length / NODE_PAGE_SIZE)));
-const pageViews = computed(() => {
-  const start = (Math.min(page.value, pageCount.value) - 1) * NODE_PAGE_SIZE;
-  return matchedViews.value.slice(start, start + NODE_PAGE_SIZE);
-});
+const pageStart = computed(() => (Math.min(page.value, pageCount.value) - 1) * NODE_PAGE_SIZE);
+const pageViews = computed(() => matchedViews.value.slice(pageStart.value, pageStart.value + NODE_PAGE_SIZE));
 watch(search, () => {
   page.value = 1;
 });
@@ -350,6 +367,15 @@ const proofTitle = computed(() => {
 const readingSnapshots = computed(
   () => detailProgress.value.total > 0 && detailProgress.value.done < detailProgress.value.total,
 );
+const proofSegments = computed(() => {
+  const segments: string[] = [];
+  if (newestObserved.value) segments.push(`observed ${clockUtc(newestObserved.value)}, ${ageLabel(newestObserved.value, observedAt.value)} ago`);
+  else if (canSeeReality.value) segments.push("not observed yet");
+  else segments.push("reality not readable");
+  segments.push(`${counts.value.total} ${nodesWord(counts.value.total)} report`);
+  if (readingSnapshots.value) segments.push(`reading ${detailProgress.value.done} of ${detailProgress.value.total} snapshots`);
+  return segments;
+});
 
 // ── findings ────────────────────────────────────────────────────────────────
 
@@ -367,6 +393,12 @@ const findings = computed<Finding[]>(() =>
     .filter((view) => view.detail === "loaded" && view.exposure.evidence === "fresh")
     .flatMap((view) => findingsFor(view.row, view.exposure, exposureContext.value)),
 );
+/** The tab count: a fact about the findings list, absent rather than "0". */
+const findingsCount = computed(() => (findings.value.length ? findings.value.length : null));
+
+function findingsForNode(nodeId: string): Finding[] {
+  return findings.value.filter((finding) => finding.nodeId === nodeId);
+}
 
 function toggleFinding(key: string): void {
   if (expandedFindings.value.has(key)) {
@@ -394,10 +426,6 @@ function restoreFinding(key: string): void {
   ignored.value.delete(key);
 }
 
-const emptyMessage = computed(() =>
-  searching.value ? "No node matches the search. Clear it to see the fleet." : "This session can see no nodes at all.",
-);
-
 function addToGroup(finding: Finding): void {
   const view = views.value.find((candidate) => candidate.row.nodeId === finding.nodeId);
   const managed = view?.exposure.managedBy;
@@ -419,11 +447,11 @@ const reviews = ref(new Map<string, Review>());
 const reviewLoading = ref(new Set<string>());
 const reviewErrors = ref(new Map<string, string>());
 /**
- * The ruleset as it stood when the selected node was opened. It is the left
+ * The ruleset as it stood when each node's detail was opened. It is the left
  * side of the apply diff: the only "before" a client can honestly show,
  * because a reality snapshot reports the live table as a hash, never as text.
  */
-const rulesetBaseline = ref("");
+const rulesetBaselines = ref(new Map<string, string>());
 
 async function ensureReview(nodeId: string, force = false): Promise<void> {
   if (!canSeeReality.value || !nodeId) return;
@@ -442,38 +470,24 @@ async function ensureReview(nodeId: string, force = false): Promise<void> {
   }
 }
 
-const selectedRow = computed<PostureRow | undefined>(() =>
-  posture.value.find((row) => row.nodeId === selectedNodeId.value),
-);
-const selectedReview = computed(() => reviews.value.get(selectedNodeId.value));
-const selectedReviewError = computed(
-  () => selectedReview.value?.compile_error || reviewErrors.value.get(selectedNodeId.value) || "",
-);
+function reviewErrorFor(nodeId: string): string {
+  return reviews.value.get(nodeId)?.compile_error || reviewErrors.value.get(nodeId) || "";
+}
 
-/** A fresh review for the selected node, and the diff baseline it opened with. */
-async function loadSelectedReview(): Promise<void> {
-  const nodeId = selectedNodeId.value;
-  rulesetBaseline.value = "";
+/** A fresh review for one node, and the diff baseline its detail opened with. */
+async function loadReviewFor(nodeId: string): Promise<void> {
+  rulesetBaselines.value.delete(nodeId);
   await ensureReview(nodeId, true);
-  if (selectedNodeId.value === nodeId) rulesetBaseline.value = reviews.value.get(nodeId)?.ruleset ?? "";
+  if (expanded.isOpen(nodeId)) rulesetBaselines.value.set(nodeId, reviews.value.get(nodeId)?.ruleset ?? "");
 }
 
-async function openNode(nodeId: string): Promise<void> {
-  if (selectedNodeId.value === nodeId) {
-    selectedNodeId.value = "";
-    return;
-  }
-  selectedNodeId.value = nodeId;
-  // The panel mounts under the table, which on a full fleet is below the
-  // fold; a click whose only visible effect is a 2px bar is a click that did
-  // nothing. Bring the panel up on the base duration.
-  await nextTick();
-  scrollToElement(document.querySelector<HTMLElement>(".detail"));
-  await loadSelectedReview();
+function toggleNode(nodeId: string): void {
+  expanded.toggle(nodeId);
+  if (expanded.isOpen(nodeId)) void loadReviewFor(nodeId);
 }
 
-async function reloadReview(): Promise<void> {
-  if (selectedNodeId.value) await ensureReview(selectedNodeId.value, true);
+async function reloadReview(nodeId: string): Promise<void> {
+  if (nodeId) await ensureReview(nodeId, true);
 }
 
 // ── authoring ───────────────────────────────────────────────────────────────
@@ -503,7 +517,7 @@ async function saveGroup(payload: Record<string, unknown>): Promise<void> {
     notice.value = `Security group ${String(payload.name)} saved`;
     closeGroup();
     await refresh(true);
-    await reloadReview();
+    await reloadOpenReviews();
   } catch (cause) {
     groupError.value = safeErrorMessage(cause, "The security group could not be saved");
   } finally {
@@ -530,7 +544,7 @@ async function saveZone(payload: Record<string, unknown>): Promise<void> {
     notice.value = `Zone ${String(payload.name)} saved`;
     zoneDialog.value = false;
     await refresh(true);
-    await reloadReview();
+    await reloadOpenReviews();
   } catch (cause) {
     zoneError.value = safeErrorMessage(cause, "The zone could not be saved");
   } finally {
@@ -538,11 +552,21 @@ async function saveZone(payload: Record<string, unknown>): Promise<void> {
   }
 }
 
+/** The node a row-scoped dialog (binding, apply, adopt) is about. */
+const dialogNodeId = ref("");
+const dialogRow = computed<PostureRow | undefined>(() => posture.value.find((row) => row.nodeId === dialogNodeId.value));
+const dialogReview = computed(() => reviews.value.get(dialogNodeId.value));
+
+async function reloadOpenReviews(): Promise<void> {
+  await Promise.all([...expanded.keys.value].map((nodeId) => reloadReview(nodeId)));
+}
+
 const bindingDialog = ref(false);
 const bindingSaving = ref(false);
 const bindingError = ref("");
 
-function openBinding(): void {
+function openBinding(nodeId: string): void {
+  dialogNodeId.value = nodeId;
   bindingError.value = "";
   bindingDialog.value = true;
 }
@@ -552,10 +576,10 @@ async function saveBinding(payload: Record<string, unknown>): Promise<void> {
   bindingError.value = "";
   try {
     await call("upsert_binding", payload);
-    notice.value = `Binding for ${selectedRow.value?.nodeName ?? "node"} saved`;
+    notice.value = `Binding for ${dialogRow.value?.nodeName ?? "node"} saved`;
     bindingDialog.value = false;
     await refresh(true);
-    await reloadReview();
+    await reloadOpenReviews();
   } catch (cause) {
     bindingError.value = safeErrorMessage(cause, "The node binding could not be saved");
   } finally {
@@ -563,13 +587,14 @@ async function saveBinding(payload: Record<string, unknown>): Promise<void> {
   }
 }
 
-async function adopt(): Promise<void> {
-  if (!selectedRow.value) return;
+async function adopt(nodeId: string): Promise<void> {
+  const row = posture.value.find((candidate) => candidate.nodeId === nodeId);
+  if (!row) return;
   try {
-    await call("adopt", { node_id: selectedRow.value.nodeId });
-    notice.value = `${selectedRow.value.nodeName} adopted into NetGuard`;
+    await call("adopt", { node_id: row.nodeId });
+    notice.value = `${row.nodeName} adopted into NetGuard`;
     await refresh(true);
-    await reloadReview();
+    await reloadOpenReviews();
   } catch (cause) {
     error.value = safeErrorMessage(cause, "The legacy baseline could not be adopted");
   }
@@ -586,6 +611,10 @@ function askDelete(type: "group" | "zone", id: string, label: string): void {
   deleteTarget.value = { type, id, label };
 }
 
+function cancelDelete(): void {
+  if (!deleting.value) deleteTarget.value = undefined;
+}
+
 async function confirmDelete(): Promise<void> {
   if (!deleteTarget.value) return;
   deleting.value = true;
@@ -597,7 +626,7 @@ async function confirmDelete(): Promise<void> {
     notice.value = `${deleteTarget.value.label} deleted`;
     deleteTarget.value = undefined;
     await refresh(true);
-    await reloadReview();
+    await reloadOpenReviews();
   } catch (cause) {
     deleteError.value = safeErrorMessage(
       cause,
@@ -614,26 +643,29 @@ const applyDialog = ref(false);
 const planning = ref(false);
 const planError = ref("");
 
-function openApply(): void {
+function openApply(nodeId: string): void {
+  dialogNodeId.value = nodeId;
   planError.value = "";
   applyDialog.value = true;
 }
 
 async function confirmApply(acceptLockoutRisk: boolean): Promise<void> {
-  if (!selectedRow.value) return;
+  const row = dialogRow.value;
+  if (!row) return;
   planning.value = true;
   planError.value = "";
   try {
     const result = await call<{ approval: { id: string } }>("plan", {
-      node_id: selectedRow.value.nodeId,
+      node_id: row.nodeId,
       accept_lockout_risk: acceptLockoutRisk,
     });
     const approvalId = result.approval?.id ?? "";
-    notice.value = `Approval created for ${selectedRow.value.nodeName}${approvalId ? ` (${approvalId})` : ""}. The node keeps its current rules until someone approves it.`;
+    notice.value = `Approval created for ${row.nodeName}${approvalId ? ` (${approvalId})` : ""}. The node keeps its current rules until someone approves it.`;
     applyDialog.value = false;
     await refresh(true);
-    await reloadReview();
-    rulesetBaseline.value = selectedReview.value?.ruleset ?? rulesetBaseline.value;
+    await reloadReview(row.nodeId);
+    const ruleset = reviews.value.get(row.nodeId)?.ruleset;
+    if (ruleset !== undefined) rulesetBaselines.value.set(row.nodeId, ruleset);
   } catch (cause) {
     planError.value = safeErrorMessage(
       cause,
@@ -657,141 +689,185 @@ onBeforeUnmount(() => {
   bridge?.dispose();
 });
 
-// ── groups and zones ────────────────────────────────────────────────────────
-
-/** The merged preview, only where merging says something the rule list does not. */
-function groupPreview(group: SecurityGroup): string[] {
-  const rules = group.rules ?? [];
-  const preview = allowsPreview(rules, exposureContext.value);
-  const enabledAllows = rules.filter((rule) => !rule.disabled && rule.action === "allow" && rule.direction === "ingress").length;
-  return preview.length < enabledAllows ? preview : [];
+/** The one recovery from a missing handshake: a fresh document asks the host again. */
+function reloadPage(): void {
+  window.location.reload();
 }
 
-function groupUsedBy(group: SecurityGroup): number {
-  return usedByNodes(overview.value.nodes, "group_ids", group.id);
-}
-
-function zoneUsedBy(zone: GuardZone): number {
-  return usedByNodes(overview.value.nodes, "zone_ids", zone.id);
-}
+// ── words ───────────────────────────────────────────────────────────────────
 
 function nodesWord(count: number): string {
   return count === 1 ? "node" : "nodes";
 }
+
+function plural(count: number, one: string, many: string): string {
+  return `${count} ${count === 1 ? one : many}`;
+}
+
+const permissionNote = computed(() => {
+  if (loading.value || bootError.value || canAdmin.value) return "";
+  if (lens.value === "groups") return "read-only: netguard:admin is needed to create or edit a group";
+  if (lens.value === "zones") return "read-only: netguard:admin is needed to create or edit a zone";
+  return "";
+});
+
+const driftNote = computed(() =>
+  counts.value.drifted
+    ? "live table differs from what Lattice applied"
+    : `${counts.value.inSync} in sync · ${counts.value.driftUnknown} unknown`,
+);
+const staleNote = computed(() =>
+  counts.value.stale ? "snapshot older than the server trusts" : `${counts.value.fresh} fresh · ${counts.value.neverReported} never reported`,
+);
 </script>
 
 <template>
-  <main class="workspace">
-    <header class="masthead">
-      <div class="mark"><Shield :size="18" /></div>
-      <div class="mark-copy">
-        <h1>NetGuard</h1>
-        <p>nftables firewall control for the fleet: what you declared, and what each machine reports it actually has.</p>
-      </div>
-      <button class="button secondary" type="button" :disabled="loading || refreshing" @click="refresh(true)">
-        <LoaderCircle v-if="refreshing" class="spin" :size="15" /><RefreshCw v-else :size="15" />Refresh
-      </button>
-    </header>
+  <PcWorkspace>
+    <PcPageHeader
+      title="NetGuard"
+      badge="NetGuard plugin"
+      description="nftables firewall control for the fleet: what you declared, and what each machine reports it actually has."
+    >
+      <template #icon><Shield :size="19" /></template>
+      <template #actions>
+        <PcButton :busy="refreshing" :disabled="loading || Boolean(bootError)" @click="refresh(true)">
+          <template #icon><RefreshCw :size="15" /></template>Refresh
+        </PcButton>
+      </template>
+      <template v-if="!loading && !bootError" #proof>
+        <PcProofLine :segments="proofSegments" :refreshing="refreshing" :title="proofTitle" />
+      </template>
+    </PcPageHeader>
 
-    <p v-if="!loading && !bootError" class="proof-line" aria-live="polite" :title="proofTitle">
-      <span v-if="newestObserved">observed {{ clockUtc(newestObserved) }}, {{ ageLabel(newestObserved, observedAt) }} ago</span>
-      <span v-else-if="canSeeReality">not observed yet</span>
-      <span v-else>reality not readable</span>
-      <span>· {{ counts.total }} {{ nodesWord(counts.total) }}</span>
-      <span>· {{ counts.managed }} managed</span>
-      <span>· {{ counts.observeOnly }} observe only</span>
-      <span>· {{ counts.drifted }} drift</span>
-      <span>· {{ counts.stale }} stale</span>
-      <span v-if="readingSnapshots">· reading {{ detailProgress.done }} of {{ detailProgress.total }} snapshots</span>
-      <span v-if="refreshing">· refreshing</span>
-    </p>
+    <PcNotice v-if="error" dismissible title="Part of this page could not be loaded" @dismiss="error = ''">
+      <p class="ng-pre-line">{{ error }}</p>
+      <template #actions><PcButton compact :busy="refreshing" @click="refresh(true)">Try again</PcButton></template>
+    </PcNotice>
+    <PcNotice v-if="notice" tone="success" dismissible @dismiss="notice = ''">
+      <p>{{ notice }}</p>
+    </PcNotice>
+    <PcNotice v-if="realityTruncated" tone="warning" title="This fleet is larger than this panel paged through">
+      <p>The exposure below covers only the nodes listed. Narrow the view before trusting the totals.</p>
+    </PcNotice>
+    <PcNotice v-if="!canSeeReality && !loading && !bootError" tone="warning" title="This session cannot read node reality">
+      <p>Exposure and drift cannot be shown. Everything below is declared intent only.</p>
+    </PcNotice>
 
-    <div v-if="bootError" class="notice danger" role="alert">
-      <CircleAlert :size="16" /><span>{{ bootError }}</span>
-    </div>
-    <div v-if="error" class="notice danger" role="alert">
-      <CircleAlert :size="16" /><span class="pre-line">{{ error }}</span>
-      <button class="icon-button" type="button" aria-label="Dismiss" @click="error = ''"><X :size="14" /></button>
-    </div>
-    <div v-if="notice" class="notice ok" aria-live="polite">
-      <CheckCircle2 :size="16" /><span>{{ notice }}</span>
-      <button class="icon-button" type="button" aria-label="Dismiss" @click="notice = ''"><X :size="14" /></button>
-    </div>
-    <div v-if="realityTruncated" class="notice warn">
-      <CircleAlert :size="16" />
-      <span>
-        This fleet is larger than this panel paged through, so the exposure below covers only the
-        nodes listed. Narrow the view before trusting the totals.
-      </span>
-    </div>
-    <div v-if="!canSeeReality && !loading && !bootError" class="notice warn">
-      <CircleAlert :size="16" />
-      <span>
-        This session cannot read node reality, so exposure and drift cannot be shown. Everything
-        below is declared intent only.
-      </span>
-    </div>
+    <PcSkeleton v-if="loading" variant="strip" :count="5" label="Loading the firewall summary" />
+    <PcStatStrip v-else-if="!bootError" :count="5" label="Fleet summary">
+      <PcStatCard label="Nodes" :value="counts.total" :note="`${counts.fresh} reporting · ${plural(counts.legacy, 'legacy baseline', 'legacy baselines')} · ${counts.unbound} unbound`" />
+      <PcStatCard label="Managed" :value="counts.managed" note="under NetGuard authority" />
+      <PcStatCard label="Observe only" :value="counts.observeOnly" tone="neutral" note="visible, nothing enforced" />
+      <PcStatCard label="Drift" :value="counts.drifted" :tone="counts.drifted ? 'error' : undefined" :note="driftNote" />
+      <PcStatCard label="Stale" :value="counts.stale" :tone="counts.stale ? 'warning' : undefined" :note="staleNote" />
+    </PcStatStrip>
 
-    <nav class="lens-switch" role="tablist" aria-label="NetGuard lens">
-      <button class="lens-tab" type="button" role="tab" :aria-selected="lens === 'exposure'" @click="lens = 'exposure'">
-        <Shield :size="14" />Exposure
-        <span v-if="findings.length" class="lens-count" data-tone="danger">{{ findings.length }}</span>
-      </button>
-      <button class="lens-tab" type="button" role="tab" :aria-selected="lens === 'groups'" @click="lens = 'groups'">
-        <Boxes :size="14" />Groups<span class="lens-count">{{ overview.groups.length }}</span>
-      </button>
-      <button class="lens-tab" type="button" role="tab" :aria-selected="lens === 'zones'" @click="lens = 'zones'">
-        <ShieldCheck :size="14" />Zones<span class="lens-count">{{ overview.zones.length }}</span>
-      </button>
-    </nav>
+    <PcToolbar label="NetGuard toolbar">
+      <template #tabs>
+        <PcLensTabs v-model="lens" label="NetGuard lens">
+          <PcLensTab value="exposure" label="Exposure" :count="findingsCount" count-tone="error">
+            <template #icon><Shield :size="14" /></template>
+          </PcLensTab>
+          <PcLensTab value="groups" label="Groups" :count="loading || bootError ? null : overview.groups.length">
+            <template #icon><Boxes :size="14" /></template>
+          </PcLensTab>
+          <PcLensTab value="zones" label="Zones" :count="loading || bootError ? null : overview.zones.length">
+            <template #icon><ShieldCheck :size="14" /></template>
+          </PcLensTab>
+        </PcLensTabs>
+      </template>
+      <template v-if="lens === 'exposure'" #search>
+        <PcSearchField v-model="search" label="Search nodes" placeholder="Search by node, group, zone, port or process" />
+      </template>
+      <template v-if="lens === 'exposure' && searching && !loading" #note>
+        {{ matchedViews.length }} of {{ counts.total }} {{ nodesWord(counts.total) }} match
+      </template>
+      <template v-else-if="permissionNote" #note>{{ permissionNote }}</template>
+      <template v-if="lens === 'groups' && canAdmin && !loading" #primary>
+        <PcButton variant="primary" @click="openGroup()"><template #icon><Plus :size="15" /></template>New group</PcButton>
+      </template>
+      <template v-else-if="lens === 'zones' && canAdmin && !loading" #primary>
+        <PcButton variant="primary" @click="openZone()"><template #icon><Plus :size="15" /></template>New zone</PcButton>
+      </template>
+    </PcToolbar>
 
-    <div v-if="loading" class="loading"><LoaderCircle class="spin" :size="20" />Loading firewall state</div>
+    <PcPanel v-if="bootError" label="No session">
+      <PcEmptyState kind="handshake" title="The console has not answered">
+        <p>{{ bootError }}</p>
+        <template #actions><PcButton @click="reloadPage">Reload the page</PcButton></template>
+      </PcEmptyState>
+    </PcPanel>
+
+    <PcPanel v-else-if="loading" label="Loading">
+      <PcPanelHeader title="Loading firewall state" description="The declared intent and every node's last snapshot are on their way." />
+      <PcSkeleton :count="8" label="Loading firewall state" />
+    </PcPanel>
 
     <template v-else-if="lens === 'exposure'">
-      <div class="toolbar">
-        <label class="search">
-          <span class="visually-hidden">Search nodes</span>
-          <input v-model="search" type="search" placeholder="Search by node, group, zone, port or process" />
-        </label>
-        <p class="subtle">
-          <template v-if="searching">{{ matchedViews.length }} of {{ counts.total }} {{ nodesWord(counts.total) }} match</template>
-          <template v-else>{{ counts.total }} {{ nodesWord(counts.total) }}</template>
-          <template v-if="pageCount > 1">
-            · page {{ Math.min(page, pageCount) }} of {{ pageCount }}
-            <button class="button ghost compact" type="button" :disabled="page <= 1" @click="page -= 1">Previous</button>
-            <button class="button ghost compact" type="button" :disabled="page >= pageCount" @click="page += 1">Next</button>
+      <PcPanel id="pc-panel-exposure" role="tabpanel" aria-labelledby="pc-tab-exposure">
+        <PcPanelHeader title="Exposure" description="What each node actually has open to the internet, against what you declared. A row folds the node's evidence and its generated ruleset underneath.">
+          <PcCount :value="`${plural(counts.total, 'node', 'nodes')}${findings.length ? ` · ${plural(findings.length, 'finding', 'findings')}` : ''}`" />
+        </PcPanelHeader>
+
+        <PcEmptyState v-if="error && !posture.length" kind="error" title="Nothing could be loaded">
+          <p>This is not an empty fleet, it is an unanswered question.</p>
+          <p class="ng-pre-line">{{ error }}</p>
+          <template #actions><PcButton :busy="refreshing" @click="refresh(true)">Try again</PcButton></template>
+        </PcEmptyState>
+        <PcEmptyState v-else-if="!posture.length" title="No nodes are visible">
+          <template #icon><Radar :size="26" /></template>
+          <p>This session can see no nodes at all. A node appears here once its agent reports, or once it is bound to a security group.</p>
+        </PcEmptyState>
+        <PcEmptyState v-else-if="!matchedViews.length" kind="no-match" title="No node matches that search">
+          <template #icon><Radar :size="26" /></template>
+          <p>Nothing in {{ plural(counts.total, 'node', 'nodes') }} matches <span class="pc-mono">{{ search.trim() }}</span>. The search covers node name and id, group and zone ids, group names, open ports and their owning process.</p>
+          <template #actions><PcButton @click="search = ''">Clear the search</PcButton></template>
+        </PcEmptyState>
+
+        <ExposureTable
+          v-else
+          :rows="pageViews"
+          :sort-key="sortKey"
+          :sort-direction="sortDirection"
+          :is-open="expanded.isOpen"
+          :ignored="ignored"
+          :observed-at="observedAt"
+          :can-see-reality="canSeeReality"
+          @sort="onSort"
+          @toggle="toggleNode"
+          @finding="focusFinding"
+        >
+          <template #detail="{ view }">
+            <NodeDetail
+              :row="view.row"
+              :review="reviews.get(view.row.nodeId)"
+              :loading="reviewLoading.has(view.row.nodeId)"
+              :review-error="reviewErrorFor(view.row.nodeId)"
+              :findings="findingsForNode(view.row.nodeId)"
+              :ignored="ignored"
+              :can-admin="canAdmin"
+              :can-plan="canPlan"
+              @edit-binding="openBinding(view.row.nodeId)"
+              @plan="openApply(view.row.nodeId)"
+              @adopt="adopt(view.row.nodeId)"
+              @add="addToGroup"
+              @ignore="ignoreFinding"
+              @restore="restoreFinding"
+            />
           </template>
-        </p>
-      </div>
+        </ExposureTable>
 
-      <ExposureTable
-        :rows="pageViews"
-        :sort-key="sortKey"
-        :sort-direction="sortDirection"
-        :selected="selectedNodeId"
-        :ignored="ignored"
-        :observed-at="observedAt"
-        :can-see-reality="canSeeReality"
-        :error="error"
-        :empty-message="emptyMessage"
-        @sort="onSort"
-        @open="openNode"
-        @finding="focusFinding"
-        @refresh="refresh(true)"
-      />
-
-      <NodeDetail
-        v-if="selectedRow"
-        :row="selectedRow"
-        :review="selectedReview"
-        :loading="reviewLoading.has(selectedNodeId)"
-        :review-error="selectedReviewError"
-        :can-admin="canAdmin"
-        :can-plan="canPlan"
-        @edit-binding="openBinding"
-        @plan="openApply"
-        @adopt="adopt"
-      />
+        <PcPagination
+          v-if="pageCount > 1"
+          v-model:page="page"
+          :pages="pageCount"
+          :from="pageStart + 1"
+          :to="Math.min(pageStart + NODE_PAGE_SIZE, matchedViews.length)"
+          :total="matchedViews.length"
+          noun="Nodes"
+          label="Exposure pagination"
+        />
+      </PcPanel>
 
       <ExposureFindings
         :findings="findings"
@@ -808,134 +884,50 @@ function nodesWord(count: number): string {
       />
     </template>
 
-    <template v-else-if="lens === 'groups'">
-      <div class="toolbar">
-        <div>
-          <h2>Security groups</h2>
-          <p class="subtle">Ordered rules, attached to one or more nodes. The chain policy stays default drop.</p>
-        </div>
-        <button v-if="canAdmin" class="button primary" type="button" @click="openGroup()">
-          <Plus :size="14" />New group
-        </button>
-      </div>
+    <PcPanel v-else-if="lens === 'groups'" id="pc-panel-groups" role="tabpanel" aria-labelledby="pc-tab-groups">
+      <PcPanelHeader title="Security groups" description="Ordered rules, attached to one or more nodes. The chain policy stays default drop, so anything no rule accepts is dropped. A group folds its rules underneath.">
+        <PcCount :value="plural(overview.groups.length, 'group', 'groups')" />
+      </PcPanelHeader>
+      <GroupsTable
+        v-if="overview.groups.length"
+        :groups="overview.groups"
+        :nodes="overview.nodes"
+        :context="exposureContext"
+        :is-open="groupsOpen.isOpen"
+        :can-admin="canAdmin"
+        @toggle="groupsOpen.toggle"
+        @edit="openGroup"
+        @delete="(group) => askDelete('group', group.id, group.name)"
+      />
+      <PcEmptyState v-else title="No security groups">
+        <template #icon><Boxes :size="26" /></template>
+        <p>A group is a reusable, ordered rule set. Create one, then attach it to a managed node in that node's binding.</p>
+        <template v-if="canAdmin" #actions>
+          <PcButton variant="primary" @click="openGroup()"><template #icon><Plus :size="15" /></template>New group</PcButton>
+        </template>
+      </PcEmptyState>
+    </PcPanel>
 
-      <section v-if="overview.groups.length" class="panel">
-        <div class="table-scroll">
-          <table class="groups-table">
-            <thead>
-              <tr><th>Group</th><th>Rules</th><th class="numeric">Used by</th><th>Source</th><th class="actions-head"><span class="visually-hidden">Actions</span></th></tr>
-            </thead>
-            <tbody>
-              <tr v-for="group in overview.groups" :key="group.id">
-                <td class="node-cell">
-                  <strong>{{ group.name }}</strong>
-                  <small class="mono">{{ group.id }}</small>
-                  <small v-for="line in groupPreview(group)" :key="line" class="allows-line">allows {{ line }}</small>
-                </td>
-                <td>
-                  <p v-if="!group.rules?.length" class="absent">No rules. Everything stays dropped.</p>
-                  <ul v-else class="rule-summary">
-                    <li v-for="rule in group.rules" :key="rule.id" :data-disabled="rule.disabled">
-                      <span class="rule-action" :data-action="rule.action">{{ rule.disabled ? 'off' : rule.action }}</span>
-                      <span class="mono">{{ ruleSentence(rule, exposureContext) }}</span>
-                      <small v-if="rule.comment">{{ rule.comment }}</small>
-                    </li>
-                  </ul>
-                </td>
-                <td class="numeric mono">
-                  {{ groupUsedBy(group) }}
-                  <small>{{ nodesWord(groupUsedBy(group)) }}</small>
-                </td>
-                <td>{{ group.source || 'stored' }}<small>v{{ group.version }}</small></td>
-                <td class="actions-cell">
-                  <span v-if="canAdmin" class="row-actions">
-                    <button class="icon-button bordered" type="button" aria-label="Edit group" title="Edit" @click="openGroup(group)">
-                      <Pencil :size="14" />
-                    </button>
-                    <button
-                      class="icon-button bordered destructive"
-                      type="button"
-                      aria-label="Delete group"
-                      title="Delete"
-                      @click="askDelete('group', group.id, group.name)"
-                    >
-                      <Trash2 :size="14" />
-                    </button>
-                  </span>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </section>
-      <div v-else class="empty panel">
-        <Boxes :size="26" />
-        <strong>No security groups</strong>
-        <span>Create a reusable rule set, then attach it to a managed node.</span>
-      </div>
-    </template>
-
-    <template v-else>
-      <div class="toolbar">
-        <div>
-          <h2>Trusted zones</h2>
-          <p class="subtle">Interfaces and CIDRs accepted before any security group is evaluated.</p>
-        </div>
-        <button v-if="canAdmin" class="button primary" type="button" @click="openZone()">
-          <Plus :size="14" />New zone
-        </button>
-      </div>
-
-      <section v-if="overview.zones.length" class="panel">
-        <div class="table-scroll">
-          <table class="zones-table">
-            <thead>
-              <tr><th>Zone</th><th>Interfaces</th><th>CIDRs</th><th>Kind</th><th class="numeric">Used by</th><th class="actions-head"><span class="visually-hidden">Actions</span></th></tr>
-            </thead>
-            <tbody>
-              <tr v-for="zone in overview.zones" :key="zone.id">
-                <td class="node-cell">
-                  <strong>{{ zone.name }}</strong>
-                  <small>{{ zone.description || zone.id }}</small>
-                </td>
-                <td class="mono">{{ zone.interfaces?.join(', ') || (zone.builtin ? 'resolved per node' : 'none set') }}</td>
-                <td class="mono">{{ zone.cidrs?.join(', ') || (zone.builtin ? 'resolved per node' : 'none set') }}</td>
-                <td>{{ zone.builtin ? 'built in' : 'custom' }}</td>
-                <td class="numeric mono">
-                  {{ zoneUsedBy(zone) }}
-                  <small>{{ nodesWord(zoneUsedBy(zone)) }}</small>
-                </td>
-                <td class="actions-cell">
-                  <span v-if="canAdmin && !zone.builtin" class="row-actions">
-                    <button class="icon-button bordered" type="button" aria-label="Edit zone" title="Edit" @click="openZone(zone)">
-                      <Pencil :size="14" />
-                    </button>
-                    <button
-                      class="icon-button bordered destructive"
-                      type="button"
-                      aria-label="Delete zone"
-                      title="Delete"
-                      @click="askDelete('zone', zone.id, zone.name)"
-                    >
-                      <Trash2 :size="14" />
-                    </button>
-                  </span>
-                  <span v-else class="absent">built in</span>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </section>
-      <div v-else class="empty panel">
-        <ShieldCheck :size="26" />
-        <strong>No trusted zones</strong>
-        <span>
-          A zone names the interfaces and CIDRs a node accepts before any security group runs. Create
-          one to keep a management path open, then attach it in a node's binding.
-        </span>
-      </div>
-    </template>
+    <PcPanel v-else id="pc-panel-zones" role="tabpanel" aria-labelledby="pc-tab-zones">
+      <PcPanelHeader title="Trusted zones" description="Interfaces and CIDRs accepted before any security group is evaluated. A built-in zone is resolved on every node.">
+        <PcCount :value="plural(overview.zones.length, 'zone', 'zones')" />
+      </PcPanelHeader>
+      <ZonesTable
+        v-if="overview.zones.length"
+        :zones="overview.zones"
+        :nodes="overview.nodes"
+        :can-admin="canAdmin"
+        @edit="openZone"
+        @delete="(zone) => askDelete('zone', zone.id, zone.name)"
+      />
+      <PcEmptyState v-else title="No trusted zones">
+        <template #icon><ShieldCheck :size="26" /></template>
+        <p>A zone names the interfaces and CIDRs a node accepts before any security group runs. Create one to keep a management path open, then attach it in a node's binding.</p>
+        <template v-if="canAdmin" #actions>
+          <PcButton variant="primary" @click="openZone()"><template #icon><Plus :size="15" /></template>New zone</PcButton>
+        </template>
+      </PcEmptyState>
+    </PcPanel>
 
     <GroupEditor
       :open="groupDialog"
@@ -957,7 +949,7 @@ function nodesWord(count: number): string {
     />
     <BindingEditor
       :open="bindingDialog"
-      :node="selectedRow?.intent"
+      :node="dialogRow?.intent"
       :groups="overview.groups"
       :zones="overview.zones"
       :saving="bindingSaving"
@@ -967,37 +959,33 @@ function nodesWord(count: number): string {
     />
     <ApplyDialog
       :open="applyDialog"
-      :row="selectedRow"
-      :baseline="rulesetBaseline"
-      :ruleset="selectedReview?.ruleset ?? ''"
-      :findings="selectedReview?.findings ?? []"
-      :compile-error="selectedReviewError"
+      :row="dialogRow"
+      :baseline="rulesetBaselines.get(dialogNodeId) ?? ''"
+      :ruleset="dialogReview?.ruleset ?? ''"
+      :findings="dialogReview?.findings ?? []"
+      :compile-error="reviewErrorFor(dialogNodeId)"
       :planning="planning"
       :error="planError"
       @close="applyDialog = false"
       @confirm="confirmApply"
     />
 
-    <ModalDialog
+    <PcConfirmDialog
       :open="Boolean(deleteTarget)"
+      :title="`Delete ${deleteTarget?.label ?? ''}?`"
+      confirm-label="Delete"
+      destructive
       :busy="deleting"
-      width="narrow"
-      :title="`Delete ${deleteTarget?.label ?? ''}`"
-      @close="deleteTarget = undefined"
+      @confirm="confirmDelete"
+      @cancel="cancelDelete"
     >
-      <p>
-        This removes <strong>{{ deleteTarget?.label }}</strong> from NetGuard. Nodes that still
-        reference it keep their current rules until they are planned again.
-      </p>
-      <p v-if="deleteError" class="notice danger"><span>{{ deleteError }}</span></p>
-      <template #footer>
-        <button class="button secondary" type="button" :disabled="deleting" @click="deleteTarget = undefined">
-          Cancel
-        </button>
-        <button class="button danger" type="button" :disabled="deleting" @click="confirmDelete">
-          <LoaderCircle v-if="deleting" class="spin" :size="14" />Delete
-        </button>
-      </template>
-    </ModalDialog>
-  </main>
+      <div class="ng-stack">
+        <p>
+          This removes <strong>{{ deleteTarget?.label }}</strong> from NetGuard. Nodes that still
+          reference it keep their current rules until they are planned again.
+        </p>
+        <PcNotice v-if="deleteError"><p>{{ deleteError }}</p></PcNotice>
+      </div>
+    </PcConfirmDialog>
+  </PcWorkspace>
 </template>

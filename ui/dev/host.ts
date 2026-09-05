@@ -14,9 +14,10 @@
  * frame height is visible here rather than only in production.
  *
  * Ported from lattice-plugin-vpn-core/ui/dev/host.ts. Query parameters:
- * `scenario`, `width`, `frame` (the pane height), `theme`, `zoom`, and
- * `plugin` (forwarded to the plugin document's own query string, so
- * `plugin=lens%3Dgroups` opens a lens by URL).
+ * `scenario`, `width`, `frame` (the pane height), `theme`, `zoom`, `latency`
+ * (hold every answer, to look at the loading state), and `plugin` (forwarded
+ * to the plugin document's own query string, so `plugin=lens%3Dgroups` opens
+ * a lens by URL and `plugin=expand%3Dmetix-dmit-2` opens a node).
  */
 
 import { handlers, INTERFACES, SCENARIOS, type Scenario } from "./fixtures";
@@ -49,6 +50,9 @@ let scenario = (SCENARIOS.includes(params.get("scenario") as Scenario) ? params.
 const zoom = params.get("zoom");
 if (zoom) document.documentElement.style.zoom = zoom;
 const pluginQuery = params.get("plugin") ?? "";
+/* `latency` holds every answer for this many milliseconds, so the first-load
+ * skeleton can be looked at instead of blinking past. Harness only. */
+const latency = Number(params.get("latency") ?? 0);
 let dark = params.get("theme") !== "light";
 let width = params.get("width") ?? "1440";
 /** The height of the console's main region. The frame gets exactly this. */
@@ -128,7 +132,7 @@ window.addEventListener("message", (event) => {
       const handler = table[key];
       // Latency, so loading states are visible rather than theoretical. The
       // per-node snapshot reads are quick, like the real ones.
-      const delay = data.method === "reality" && data.payload?.node_id ? 60 : 320;
+      const delay = latency || (data.method === "reality" && data.payload?.node_id ? 60 : 320);
       window.setTimeout(() => {
         if (scenario === "failing") {
           post({ type: "lattice.host.error", id: data.id, message: `upstream refused ${key}: 503 service unavailable` });

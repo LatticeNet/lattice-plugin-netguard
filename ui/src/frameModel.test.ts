@@ -25,27 +25,40 @@ describe("netguard frame model", () => {
     expect(app).toContain('@click="refresh(true)"');
   });
 
-  it("positions overlays against the window, not a measured document anchor", () => {
-    const dialog = read("./components/ModalDialog.vue");
-    expect(dialog).not.toContain("anchorTop");
-    expect(dialog).not.toContain("getBoundingClientRect");
-    const styles = read("./styles.css");
-    const root = styles.match(/\.overlay-root \{[^}]*\}/)?.[0] ?? "";
-    expect(root).toContain("position: fixed");
-    expect(root).toContain("inset: 0");
+  it("renders on the shared plugin chassis and nothing else", () => {
+    // The skeleton is the chassis's: one stylesheet, imported once before the
+    // plugin's own, and the page parts come from the chassis package rather
+    // than a local copy of a modal, a pill or a table.
+    const main = read("./main.ts");
+    expect(main.indexOf("@latticenet/plugin-bridge/chassis.css")).toBeGreaterThan(-1);
+    expect(main.indexOf("@latticenet/plugin-bridge/chassis.css")).toBeLessThan(main.indexOf("./styles.css"));
+    const app = read("./App.vue");
+    for (const part of ["PcWorkspace", "PcPageHeader", "PcProofLine", "PcStatStrip", "PcToolbar", "PcLensTabs", "PcPanel", "useOverlayEscape"]) {
+      expect(app, part).toContain(part);
+    }
+    for (const editor of ["ApplyDialog", "GroupEditor", "ZoneEditor", "BindingEditor"]) {
+      const source = read(`./components/${editor}.vue`);
+      expect(source, editor).toContain("PcModal");
+      expect(source, editor).not.toContain("getBoundingClientRect");
+    }
   });
 
   it("keeps the document as the only vertical scroller", () => {
     // No block on the page may cap itself at a height and scroll on its own;
-    // the one exception is the body of a fixed modal, which is not on the page.
+    // the one exception is the body of a fixed modal, which is not on the page
+    // and belongs to the chassis.
     const styles = read("./styles.css");
-    for (const selector of [".table-scroll", ".code", ".panel", ".detail", ".subpanel", ".findings"]) {
-      const block = styles.match(new RegExp(`\\${selector} \\{[^}]*\\}`))?.[0] ?? "";
-      expect(block, selector).not.toContain("max-height");
-      expect(block, selector).not.toContain("100vh");
-      expect(block, selector).not.toContain("100dvh");
-    }
-    const tableScroll = styles.match(/\.table-scroll \{[^}]*\}/)?.[0] ?? "";
-    expect(tableScroll).not.toContain("overflow-y");
+    expect(styles).not.toContain("max-height");
+    expect(styles).not.toContain("100vh");
+    expect(styles).not.toContain("100dvh");
+    expect(styles).not.toContain("overflow-y");
+  });
+
+  it("paints no colour of its own", () => {
+    // Every colour is a published token or a chassis derivation of one, so the
+    // page follows the console's theme and palette without a second design.
+    const styles = read("./styles.css");
+    expect(styles).not.toMatch(/#[0-9a-f]{3,8}\b/i);
+    expect(styles).not.toMatch(/\b(rgb|hsl|oklch)\(/);
   });
 });

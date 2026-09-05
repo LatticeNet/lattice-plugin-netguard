@@ -1,16 +1,21 @@
 <script setup lang="ts">
 /**
- * One node, intent beside evidence.
+ * One node, intent beside evidence, folded under its row.
  *
- * The left half is what an operator declared; the right half is what the
- * machine reports. The panel refuses to imply agreement it cannot prove: when a
- * node has never reported, the evidence side says so plainly instead of
- * rendering empty tables that read like "nothing is listening".
+ * The action row comes first because it is what the operator opened the row
+ * for: edit the binding, review and apply, or adopt a legacy baseline. Then
+ * the node's own unexplained ports, the lint findings, the three facts cards,
+ * the listeners, the interfaces and the generated ruleset. The block refuses
+ * to imply agreement it cannot prove: when a node has never reported, the
+ * evidence side says so plainly instead of rendering empty tables that read
+ * like "nothing is listening".
  */
 import { computed } from "vue";
-import { CircleAlert, LoaderCircle, Play, Pencil, ShieldCheck, TriangleAlert } from "@lucide/vue";
+import { Pencil, Play } from "@lucide/vue";
 
-import StatusPill from "./StatusPill.vue";
+import { PcButton, PcNotice, PcSkeleton, PcStateDot, PcStatePill } from "@latticenet/plugin-bridge/chassis";
+
+import { formatProcesses, type Finding } from "../exposure";
 import {
   driftLabel,
   driftToneFor,
@@ -19,19 +24,17 @@ import {
   snapshotToneFor,
   type PostureRow,
 } from "../posture";
-import {
-  endSentence,
-  orderListeners,
-  severityTone,
-  suggestionsByPort,
-  type Review,
-} from "../netguardModel";
+import { endSentence, orderListeners, severityTone, suggestionsByPort, type Review } from "../netguardModel";
+import { stateTone } from "../tones";
 
 const props = defineProps<{
   row: PostureRow;
   review?: Review;
   loading: boolean;
   reviewError: string;
+  /** This node's open ports that no rule explains, ignored ones included. */
+  findings: readonly Finding[];
+  ignored: ReadonlySet<string>;
   canAdmin: boolean;
   canPlan: boolean;
 }>();
@@ -40,6 +43,9 @@ const emit = defineEmits<{
   (event: "edit-binding"): void;
   (event: "plan"): void;
   (event: "adopt"): void;
+  (event: "add", finding: Finding): void;
+  (event: "ignore", key: string): void;
+  (event: "restore", key: string): void;
 }>();
 
 const reality = computed(() => props.review?.reality?.reality ?? undefined);
@@ -49,12 +55,19 @@ const flaggedPorts = computed(() => new Set(portIndex.value.keys()));
 const listeners = computed(() => orderListeners(reality.value?.listeners ?? [], flaggedPorts.value));
 const interfaces = computed(() => reality.value?.interfaces ?? []);
 const foreignTables = computed(() => reality.value?.foreign_tables ?? []);
-const findings = computed(() => props.review?.findings ?? []);
-const blocking = computed(() => findings.value.some((finding) => finding.severity === "block"));
+const lint = computed(() => props.review?.findings ?? []);
+const blocking = computed(() => lint.value.some((finding) => finding.severity === "block"));
+
+const hasActions = computed(
+  () =>
+    (props.row.coverage === "legacy" && props.canAdmin) ||
+    (props.canAdmin && props.row.coverage !== "legacy" && Boolean(props.row.intent)) ||
+    (props.canPlan && props.row.coverage === "managed"),
+);
 
 /**
  * The two hashes that define drift, shown together. Neither is meaningful
- * alone, and a panel that shows only one invites the reader to assume the
+ * alone, and a block that shows only one invites the reader to assume the
  * other matches.
  */
 const hashes = computed(() => ({
@@ -65,135 +78,117 @@ const hashes = computed(() => ({
 function severityLabel(severity: string): string {
   return severity === "block" ? "blocking" : severity;
 }
+
+function lintTone(severity: string): "error" | "warning" {
+  return severity === "block" ? "error" : "warning";
+}
 </script>
 
 <template>
-  <section class="panel detail">
-    <header class="detail-head">
-      <div>
-        <h2>{{ row.nodeName }}</h2>
-        <p class="mono subtle">{{ row.nodeId }}</p>
-      </div>
-      <div class="detail-actions">
-        <button
-          v-if="row.coverage === 'legacy' && canAdmin"
-          class="button secondary"
-          type="button"
-          @click="emit('adopt')"
-        >
-          Adopt baseline
-        </button>
-        <button
-          v-if="canAdmin && row.coverage !== 'legacy' && row.intent"
-          class="button secondary"
-          type="button"
-          @click="emit('edit-binding')"
-        >
-          <Pencil :size="14" />Edit binding
-        </button>
-        <button
-          v-if="canPlan && row.coverage === 'managed'"
-          class="button primary"
-          type="button"
-          @click="emit('plan')"
-        >
-          <Play :size="14" />Review and apply
-        </button>
-      </div>
-    </header>
-
-    <div v-if="loading" class="loading">
-      <LoaderCircle class="spin" :size="18" />Loading this node
+  <div class="ng-detail">
+    <div class="ng-detail-actions">
+      <span v-if="!canAdmin && !canPlan" class="ng-detail-note">read-only: this session can view this node and change nothing</span>
+      <template v-if="hasActions">
+        <PcButton v-if="row.coverage === 'legacy' && canAdmin" @click="emit('adopt')">Adopt baseline</PcButton>
+        <PcButton v-if="canAdmin && row.coverage !== 'legacy' && row.intent" @click="emit('edit-binding')">
+          <template #icon><Pencil :size="14" /></template>Edit binding
+        </PcButton>
+        <PcButton v-if="canPlan && row.coverage === 'managed'" variant="primary" @click="emit('plan')">
+          <template #icon><Play :size="14" /></template>Review and apply
+        </PcButton>
+      </template>
     </div>
 
-    <template v-else>
-      <div v-if="reviewError" class="notice warn">
-        <TriangleAlert :size="16" />
-        <div>
-          <strong>Intent could not be compiled for this node</strong>
-          <p>{{ endSentence(reviewError) }}</p>
-          <p>The reported evidence below is still accurate.</p>
-        </div>
-      </div>
+    <PcSkeleton v-if="loading" :count="3" :label="`Loading ${row.nodeName}`" />
 
-      <div v-if="findings.length" class="findings">
-        <div v-for="finding in findings" :key="finding.code" class="finding" :data-severity="finding.severity">
-          <CircleAlert :size="15" />
-          <div>
-            <strong>{{ severityLabel(finding.severity) }}: {{ finding.code }}</strong>
-            <p>{{ finding.message }}</p>
+    <template v-else>
+      <PcNotice v-if="reviewError" tone="warning" title="Intent could not be compiled for this node">
+        <p>{{ endSentence(reviewError) }} The reported evidence below is still accurate.</p>
+      </PcNotice>
+
+      <section v-if="findings.length" class="ng-attn" aria-label="Open ports nothing explains on this node">
+        <div v-for="finding in findings" :key="finding.key" class="ng-attn-row" :data-ignored="ignored.has(finding.key) ? 'true' : undefined">
+          <PcStateDot :tone="ignored.has(finding.key) ? 'neutral' : 'error'" :label="ignored.has(finding.key) ? 'ignored' : 'open'" />
+          <div class="ng-attn-claim">
+            <span>{{ finding.sentence }}</span>
+            <small class="pc-mono">{{ formatProcesses(finding.span) || 'owner unknown' }} · {{ finding.span.protocol }}</small>
+          </div>
+          <div class="ng-attn-actions">
+            <PcButton v-if="ignored.has(finding.key)" compact @click="emit('restore', finding.key)">Undo</PcButton>
+            <template v-else>
+              <PcButton v-if="canAdmin" compact @click="emit('add', finding)">Add to group</PcButton>
+              <PcButton compact @click="emit('ignore', finding.key)">Ignore</PcButton>
+            </template>
           </div>
         </div>
+      </section>
+
+      <div v-if="lint.length" class="ng-lint">
+        <div v-for="finding in lint" :key="finding.code" class="ng-lint-row" :data-severity="finding.severity">
+          <PcStateDot :tone="lintTone(finding.severity)" :label="severityLabel(finding.severity)" />
+          <div><strong class="pc-mono">{{ finding.code }}</strong> {{ finding.message }}</div>
+        </div>
       </div>
 
-      <div class="detail-grid">
-        <article class="detail-card">
+      <div class="ng-cards">
+        <article class="ng-card">
           <h3>Drift</h3>
-          <StatusPill :tone="driftToneFor(row.driftState)" :label="driftLabel(row.driftState)" />
-          <p v-if="row.driftState === 'unknown'" class="subtle">{{ driftUnknownReason(row) }}</p>
-          <p v-else-if="row.driftState === 'drift'" class="danger-text">
+          <PcStatePill :tone="stateTone(driftToneFor(row.driftState))" :label="driftLabel(row.driftState)" />
+          <p v-if="row.driftState === 'unknown'" class="ng-subtle">{{ driftUnknownReason(row) }}</p>
+          <p v-else-if="row.driftState === 'drift'" class="pc-danger-text">
             The managed table on this node no longer matches the ruleset Lattice applied. Someone or
             something changed it outside the control plane.
           </p>
-          <p v-else class="subtle">The live managed table matches the ruleset Lattice applied.</p>
-          <dl class="kv">
+          <p v-else class="ng-subtle">The live managed table matches the ruleset Lattice applied.</p>
+          <dl class="ng-kv">
             <dt>Applied by Lattice</dt>
-            <dd class="mono">{{ hashes.applied || 'never applied' }}</dd>
+            <dd class="pc-mono">{{ hashes.applied || 'never applied' }}</dd>
             <dt>Live on the node</dt>
-            <dd class="mono">{{ hashes.live || 'not reported' }}</dd>
+            <dd class="pc-mono">{{ hashes.live || 'not reported' }}</dd>
           </dl>
         </article>
 
-        <article class="detail-card">
+        <article class="ng-card">
           <h3>Reporting</h3>
-          <StatusPill
-            :tone="snapshotToneFor(row.snapshotStatus)"
-            :label="snapshotLabel(row.snapshotStatus)"
-          />
-          <p v-if="row.snapshotStatus === 'unknown'" class="subtle">
+          <PcStatePill :tone="stateTone(snapshotToneFor(row.snapshotStatus))" :label="snapshotLabel(row.snapshotStatus)" />
+          <p v-if="row.snapshotStatus === 'unknown'" class="ng-subtle">
             This node has never sent a firewall snapshot. That is expected until its agent is new
             enough to collect one; it is not an error and not an empty firewall.
           </p>
-          <dl class="kv">
+          <dl class="ng-kv">
             <dt>Collected</dt>
             <dd>{{ row.collectedAt ? new Date(row.collectedAt).toLocaleString() : 'never' }}</dd>
             <dt>nft version</dt>
-            <dd class="mono">{{ reality?.nft_version || 'not reported' }}</dd>
+            <dd class="pc-mono">{{ reality?.nft_version || 'not reported' }}</dd>
             <dt>Interfaces</dt>
             <dd>{{ reality ? interfaces.length : 'not reported' }}</dd>
           </dl>
         </article>
 
-        <article class="detail-card">
+        <article class="ng-card">
           <h3>Authority</h3>
-          <p class="subtle">
-            Security groups: {{ row.groupIds.length ? row.groupIds.join(', ') : 'none attached' }}
-          </p>
-          <p class="subtle">
-            Trusted zones: {{ row.zoneIds.length ? row.zoneIds.join(', ') : 'none' }}
-          </p>
-          <p v-if="row.lastError" class="danger-text">Last apply: {{ row.lastError }}</p>
-          <p v-else-if="row.lastAppliedAt" class="subtle">
-            Last applied {{ new Date(row.lastAppliedAt).toLocaleString() }}
-          </p>
-          <p v-else class="subtle">Lattice has never applied a ruleset to this node.</p>
+          <dl class="ng-kv">
+            <dt>Security groups</dt>
+            <dd>{{ row.groupIds.length ? row.groupIds.join(', ') : 'none attached' }}</dd>
+            <dt>Trusted zones</dt>
+            <dd>{{ row.zoneIds.length ? row.zoneIds.join(', ') : 'none' }}</dd>
+            <dt>Last apply</dt>
+            <dd v-if="row.lastError" class="pc-danger-text">{{ row.lastError }}</dd>
+            <dd v-else-if="row.lastAppliedAt">{{ new Date(row.lastAppliedAt).toLocaleString() }}</dd>
+            <dd v-else class="ng-subtle">Lattice has never applied a ruleset to this node.</dd>
+          </dl>
         </article>
       </div>
 
-      <div v-if="foreignTables.length" class="notice warn">
-        <TriangleAlert :size="16" />
-        <div>
-          <strong>{{ foreignTables.length }} nftables table{{ foreignTables.length === 1 ? '' : 's' }} NetGuard does not manage</strong>
-          <p>
-            These rules are in force on the node whatever the control plane thinks. NetGuard neither
-            wrote nor will remove them.
-          </p>
-          <p class="mono">{{ foreignTables.join(', ') }}</p>
-        </div>
-      </div>
+      <PcNotice v-if="foreignTables.length" tone="warning" :title="`${foreignTables.length} nftables table${foreignTables.length === 1 ? '' : 's'} NetGuard does not manage`">
+        <p>
+          These rules are in force on the node whatever the control plane thinks. NetGuard neither
+          wrote nor will remove them. <code>{{ foreignTables.join(', ') }}</code>
+        </p>
+      </PcNotice>
 
-      <section class="subpanel">
-        <header class="subpanel-head">
+      <section class="ng-subpanel">
+        <header class="ng-subpanel-head">
           <h3>Listening sockets</h3>
           <p v-if="!reality">Not reported. Nothing here is known to be open or closed.</p>
           <p v-else-if="!listeners.length">
@@ -204,22 +199,22 @@ function severityLabel(severity: string): string {
             owning process, which needs root on the node.
           </p>
         </header>
-        <div v-if="listeners.length" class="table-scroll">
-          <table>
+        <div v-if="listeners.length" class="ng-facts-wrap">
+          <table class="ng-facts">
             <thead>
               <tr><th>Port</th><th>Protocol</th><th>Bound address</th><th>Owning process</th><th>Assessment</th></tr>
             </thead>
             <tbody>
               <tr v-for="listener in listeners" :key="`${listener.protocol}-${listener.address}-${listener.port}`">
-                <td class="mono"><strong>{{ listener.port }}</strong></td>
-                <td class="mono">{{ listener.protocol || 'unknown' }}</td>
-                <td class="mono">{{ listener.address || 'all addresses' }}</td>
-                <td class="mono">{{ listener.process || 'unknown' }}</td>
+                <td class="pc-mono"><strong>{{ listener.port }}</strong></td>
+                <td class="pc-mono">{{ listener.protocol || 'unknown' }}</td>
+                <td class="pc-mono">{{ listener.address || 'all addresses' }}</td>
+                <td class="pc-mono">{{ listener.process || 'unknown' }}</td>
                 <td>
                   <template v-for="hint in portIndex.get(listener.port ?? -1) ?? []" :key="hint.id">
-                    <StatusPill :tone="severityTone(hint.severity)" :label="hint.title" :title="hint.detail" />
+                    <PcStatePill :tone="stateTone(severityTone(hint.severity))" :label="hint.title" :title="hint.detail" />
                   </template>
-                  <span v-if="!(portIndex.get(listener.port ?? -1) ?? []).length" class="absent">no finding</span>
+                  <span v-if="!(portIndex.get(listener.port ?? -1) ?? []).length" class="ng-absent">no finding</span>
                 </td>
               </tr>
             </tbody>
@@ -227,43 +222,39 @@ function severityLabel(severity: string): string {
         </div>
       </section>
 
-      <section v-if="reality && interfaces.length" class="subpanel">
-        <header class="subpanel-head"><h3>Interfaces</h3></header>
-        <div class="table-scroll">
-          <table>
+      <section v-if="reality && interfaces.length" class="ng-subpanel">
+        <header class="ng-subpanel-head"><h3>Interfaces</h3></header>
+        <div class="ng-facts-wrap">
+          <table class="ng-facts">
             <thead><tr><th>Name</th><th>State</th><th>Addresses</th></tr></thead>
             <tbody>
               <tr v-for="iface in interfaces" :key="iface.name">
-                <td class="mono"><strong>{{ iface.name }}</strong></td>
-                <td><StatusPill :tone="iface.up ? 'ok' : 'muted'" :label="iface.up ? 'up' : 'down'" /></td>
-                <td class="mono">{{ (iface.addresses ?? []).join(', ') || 'none' }}</td>
+                <td class="pc-mono"><strong>{{ iface.name }}</strong></td>
+                <td><PcStateDot :tone="iface.up ? 'healthy' : 'neutral'" :label="iface.up ? 'up' : 'down'" /></td>
+                <td class="pc-mono">{{ (iface.addresses ?? []).join(', ') || 'none' }}</td>
               </tr>
             </tbody>
           </table>
         </div>
       </section>
 
-      <section class="subpanel">
-        <header class="subpanel-head">
+      <section class="ng-subpanel">
+        <header class="ng-subpanel-head">
           <h3>Generated ruleset</h3>
           <p>
             The nft text this node's zones, groups and overrides compile to. This is the escape hatch
             behind the rule model: what Lattice would install, exactly.
           </p>
         </header>
-        <pre v-if="review?.ruleset" class="code">{{ review.ruleset }}</pre>
-        <p v-else class="subpanel-body subtle">
+        <pre v-if="review?.ruleset" class="ng-code">{{ review.ruleset }}</pre>
+        <p v-else class="ng-subpanel-body ng-subtle">
           {{ review?.compile_error || 'This node has no compiled intent yet.' }}
         </p>
       </section>
 
-      <p v-if="blocking" class="notice danger">
-        <ShieldCheck :size="16" />
-        <span>
-          This node's current intent will not plan without an explicit, audited acceptance of the
-          lockout risk above.
-        </span>
-      </p>
+      <PcNotice v-if="blocking" tone="danger" title="This node will not plan without an audited acceptance">
+        <p>The lockout finding above has to be accepted explicitly in the apply dialog, and the acceptance is recorded against your account.</p>
+      </PcNotice>
     </template>
-  </section>
+  </div>
 </template>
