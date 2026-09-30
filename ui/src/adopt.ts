@@ -33,7 +33,10 @@
  * ports takes the fast path `ip saddr @wg_peers4` (IPv4 peers only, nft.go),
  * a zone rule with CIDRs matches those CIDRs and not the zone's interfaces
  * (compile.go ruleSource), and a trusted zone is accepted by interface
- * (both families) and by its CIDRs.
+ * (both families) and by its CIDRs. A socket on the IPv6 wildcard (`::`, or
+ * `*`, or no bind reported) is taken as dual-stack, which a Go listener on
+ * ":8080" is, so it is kept only when both families are accepted. That can
+ * over-warn for a v6-only socket, which is the right error for a confirm.
  *
  * The server does not compile a baseline before it is adopted (the review of
  * a legacy node carries a compile error, not a ruleset), so the exact nft
@@ -100,6 +103,17 @@ export interface AdoptFacts {
 
 type Family = 4 | 6;
 
+/**
+ * The families a socket answers on. A specific address is its own family;
+ * the IPv6 wildcard, an unparseable `*` and a missing bind are taken as
+ * dual-stack, both families.
+ */
+function socketFamilies(address: string | undefined): Family[] {
+  const addr = parseAddress(address);
+  if (!addr || (addr.v === 6 && addr.n === 0n)) return [4, 6];
+  return [addr.v];
+}
+
 /** "22/tcp sshd", "51820/udp", "31001-31012/tcp sing-box". */
 function portLabel(span: Span): string {
   const ports = span.from === span.to ? String(span.from) : `${span.from}-${span.to}`;
@@ -112,24 +126,21 @@ function portLabel(span: Span): string {
  * same family. 203.0.113.7/32 is a public address and still admits only
  * itself.
  */
-function acceptsFromEverywhere(rule: GuardRule, family: Family | undefined): boolean {
+function acceptsFromEverywhere(rule: GuardRule, family: Family): boolean {
   const kind = rule.remote?.kind ?? "any";
   if (kind === "any" || kind === "") return true;
   if (kind === "zone") return rule.remote?.zone_id === PUBLIC_ZONE;
   if (kind !== "cidr") return false;
   const prefix = parsePrefix(rule.remote?.cidr);
-  return prefix?.bits === 0 && (family === undefined || prefix.addr.v === family);
+  return prefix?.bits === 0 && prefix.addr.v === family;
 }
 
-function cidrsReach(cidrs: readonly string[] | undefined, family: Family | undefined): boolean {
-  return (cidrs ?? []).some((cidr) => {
-    const prefix = parsePrefix(cidr);
-    return prefix !== undefined && (family === undefined || prefix.addr.v === family);
-  });
+function cidrsReach(cidrs: readonly string[] | undefined, family: Family): boolean {
+  return (cidrs ?? []).some((cidr) => parsePrefix(cidr)?.addr.v === family);
 }
 
 /** A trusted zone is accepted by each interface (both families) and by its CIDRs. */
-function trustedZoneReaches(zone: GuardZone | undefined, family: Family | undefined): boolean {
+function trustedZoneReaches(zone: GuardZone | undefined, family: Family): boolean {
   if (!zone) return false;
   return (zone.interfaces ?? []).length > 0 || cidrsReach(zone.cidrs, family);
 }
@@ -140,7 +151,7 @@ function trustedZoneReaches(zone: GuardZone | undefined, family: Family | undefi
  * @wg_peers4`: IPv4 peers only. Otherwise a zone with CIDRs is matched by
  * those CIDRs alone, and a zone without them by its interface.
  */
-function zoneRuleReaches(rule: GuardRule, zone: GuardZone | undefined, family: Family | undefined): boolean {
+function zoneRuleReaches(rule: GuardRule, zone: GuardZone | undefined, family: Family): boolean {
   if (!zone) return false;
   const fastPath = zone.id === WIREGUARD_ZONE && (rule.protocol === "tcp" || rule.protocol === "udp") && (rule.ports ?? []).length > 0;
   if (fastPath) return family !== 6;
@@ -183,13 +194,14 @@ export function cutOffs(view: ExposureRowView, ctx: ExposureContext, facts: Adop
     if ((protocol !== "tcp" && protocol !== "udp") || port < 1 || port > 65535) continue;
     const placement = bindPlacement(listener, zones, interfaces);
     if (placement.kind === "local") continue;
-    const family = parseAddress(listener.address)?.v;
+    const families = socketFamilies(listener.address);
     const covering = rules.filter((rule) => ruleCovers(rule, protocol as Protocol, port));
     const scoped = [...new Set(covering.map((rule) => remoteScope(rule.remote, ctx).label))];
 
     let reason = "";
     if (knock && protocol === "tcp" && knock.ports.includes(port)) {
-      if (covering.some((rule) => acceptsFromEverywhere(rule, family))) continue;
+      // Kept only when every family the socket answers on is accepted from everywhere.
+      if (families.every((family) => covering.some((rule) => acceptsFromEverywhere(rule, family)))) continue;
       const still =
         placement.kind === "public" && trustedNames.length
           ? ` Only the trusted ${describeScopes(trustedNames)} ${plural(trustedNames.length, "zone still reaches", "zones still reach")} it.`
@@ -203,9 +215,13 @@ export function cutOffs(view: ExposureRowView, ctx: ExposureContext, facts: Adop
       const name = zone?.name || zoneId;
       const sameZone = covering.filter((rule) => rule.remote?.kind === "zone" && rule.remote.zone_id === zoneId);
       const anywhere = covering.some((rule) => (rule.remote?.kind ?? "any") === "any" || rule.remote?.kind === "");
-      if (anywhere || (trusted.has(zoneId) && trustedZoneReaches(zone, family)) || sameZone.some((rule) => zoneRuleReaches(rule, zone, family))) continue;
-      if (family && (trusted.has(zoneId) || sameZone.length)) {
-        // The zone is accepted, but only for the other address family.
+      const reaches = (family: Family) =>
+        anywhere || (trusted.has(zoneId) && trustedZoneReaches(zone, family)) || sameZone.some((rule) => zoneRuleReaches(rule, zone, family));
+      const unreached = families.filter((family) => !reaches(family));
+      if (!unreached.length) continue;
+      const family = unreached[0]!;
+      if (trusted.has(zoneId) || sameZone.length) {
+        // The zone is accepted, but not for this address family.
         reason = `Bound to an IPv${family} ${name} address, reachable through that zone today. The new table accepts the ${name} zone for IPv${family === 6 ? 4 : 6} sources only, so traffic to this address is dropped.`;
       } else {
         reason = scoped.length

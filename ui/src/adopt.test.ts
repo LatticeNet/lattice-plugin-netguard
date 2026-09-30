@@ -152,6 +152,21 @@ describe("ports reachable today by another path", () => {
     expect(adoptPreview(withRules([web, v4, v6], []), zoned, { reality, knock }).cut.map((item) => item.port)).not.toContain("22/tcp sshd");
   });
 
+  it("takes a wildcard bind as dual-stack: kept only when both families are accepted", () => {
+    const v4: GuardRule = { id: "any4", action: "allow", direction: "ingress", protocol: "tcp", ports: [{ from: 22, to: 22 }], remote: { kind: "cidr", cidr: "0.0.0.0/0" } };
+    const v6: GuardRule = { ...v4, id: "any6", remote: { kind: "cidr", cidr: "::/0" } };
+    const bound = (address: string): GuardNodeReality => ({ ...reality, listeners: [{ protocol: "tcp", address, port: 22, process: "sshd" }] });
+    const cut = (address: string, rules: GuardRule[]) => adoptPreview(withRules([web, ...rules], []), zoned, { reality: bound(address), knock }).cut;
+    // A Go listener on ":22" binds :: and takes IPv4 too, so ::/0 alone cuts the IPv4 knockers.
+    expect(cut("::", [v6])[0]?.reason).toContain("accepts it only from ::/0");
+    // `*` is how older iproute2 prints that bind.
+    expect(cut("*", [v4])[0]?.reason).toContain("accepts it only from 0.0.0.0/0");
+    expect(cut("::", [v4, v6])).toEqual([]);
+    expect(cut("*", [v4, v6])).toEqual([]);
+    // A specific IPv6 address answers on IPv6 only.
+    expect(cut("2001:db8:1::a", [v6])).toEqual([]);
+  });
+
   it("does not let the WireGuard fast path, IPv4 peers only, keep an IPv6 socket", () => {
     const wg: GuardZone = { id: "wireguard", name: "wireguard", interfaces: ["wg0"], cidrs: ["10.66.0.0/24"] };
     const wgCtx: ExposureContext = { groups: [], zones: [lan, wg] };
