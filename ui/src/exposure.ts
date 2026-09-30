@@ -185,7 +185,8 @@ export function parseAddress(raw: string | undefined): Addr | undefined {
   return value.includes(":") ? parseV6(value) : parseV4(value);
 }
 
-function parsePrefix(raw: string | undefined): Prefix | undefined {
+/** "10.7.0.0/24" to its address and length; a bare address is a host prefix. Undefined when unparseable. */
+export function parsePrefix(raw: string | undefined): Prefix | undefined {
   const [addrText, bitsText] = (raw ?? "").trim().split("/");
   const addr = parseAddress(addrText);
   if (!addr) return undefined;

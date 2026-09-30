@@ -18,14 +18,22 @@
  *     (priority 0, policy drop). An accept in one base chain ends only that
  *     chain; the packet still meets the next one, so a knocked SYN reaches
  *     lattice_guard's `counter drop` unless a rule there accepts the port
- *     from the internet. A baseline with no 22 rule closes SSH to knockers on
- *     the first apply.
+ *     from every address: remote "any", the public zone (`iifname <public>`),
+ *     or a /0 prefix. Any narrower cidr, public or private, admits only
+ *     itself. A baseline with no 22 rule closes SSH to knockers on the first
+ *     apply.
  *   - A socket bound to a zone address (a tailscale or WireGuard IP). The
  *     compiler accepts a zone wholesale only when the binding trusts it
  *     (internal/netguard/compile.go, trusted zones first), and a rule reaches
- *     it only when its remote is "any" (no interface or source constraint) or
- *     that zone (its CIDRs or interface). An allow from the public zone is
- *     `iifname <public>` and does not.
+ *     it only when its remote is "any" or that zone. An allow from the
+ *     public zone is `iifname <public>` and does not.
+ *
+ * Every source match is per address family, so each socket is judged for
+ * its own: `ip saddr 0.0.0.0/0` is IPv4 only, a WireGuard-zone allow with
+ * ports takes the fast path `ip saddr @wg_peers4` (IPv4 peers only, nft.go),
+ * a zone rule with CIDRs matches those CIDRs and not the zone's interfaces
+ * (compile.go ruleSource), and a trusted zone is accepted by interface
+ * (both families) and by its CIDRs.
  *
  * The server does not compile a baseline before it is adopted (the review of
  * a legacy node carries a compile error, not a ruleset), so the exact nft
@@ -39,8 +47,9 @@ import {
   describeScopes,
   formatProcesses,
   indexInterfaces,
-  isPublicCidr,
   nodeRules,
+  parseAddress,
+  parsePrefix,
   remoteScope,
   ruleCovers,
   ruleSentence,
@@ -50,8 +59,11 @@ import {
   type Protocol,
   type Span,
 } from "./exposure";
-import type { GuardNodeReality, GuardRule } from "./netguardModel";
+import type { GuardNodeReality, GuardRule, GuardZone } from "./netguardModel";
 import type { ExposureRowView } from "./overview";
+
+/** The builtin zone whose ported allows render as `ip saddr @wg_peers4`. */
+const WIREGUARD_ZONE = "wireguard";
 
 /** A port reachable today by a path the new table does not accept. */
 export interface CutOff {
@@ -83,34 +95,72 @@ export interface AdoptFacts {
   knock?: KnockGate;
 }
 
+type Family = 4 | 6;
+
 /** "22/tcp sshd", "51820/udp", "31001-31012/tcp sing-box". */
 function portLabel(span: Span): string {
   const ports = span.from === span.to ? String(span.from) : `${span.from}-${span.to}`;
   return [`${ports}/${span.protocol}`, formatProcesses(span)].filter(Boolean).join(" ");
 }
 
-/** A rule the internet reaches the port through: no source constraint, a public cidr, or the public zone. */
-function acceptsFromInternet(rule: GuardRule): boolean {
+/**
+ * A rule that accepts this socket's family from every address: no source
+ * constraint, the public zone (an interface match), or a /0 prefix of the
+ * same family. 203.0.113.7/32 is a public address and still admits only
+ * itself.
+ */
+function acceptsFromEverywhere(rule: GuardRule, family: Family | undefined): boolean {
   const kind = rule.remote?.kind ?? "any";
   if (kind === "any" || kind === "") return true;
-  if (kind === "cidr") return isPublicCidr(rule.remote?.cidr);
-  return kind === "zone" && rule.remote?.zone_id === PUBLIC_ZONE;
+  if (kind === "zone") return rule.remote?.zone_id === PUBLIC_ZONE;
+  if (kind !== "cidr") return false;
+  const prefix = parsePrefix(rule.remote?.cidr);
+  return prefix?.bits === 0 && (family === undefined || prefix.addr.v === family);
 }
 
-/** A rule traffic arriving through zone `zoneId` meets: no constraint at all, or that zone. */
-function acceptsFromZone(rule: GuardRule, zoneId: string): boolean {
-  const kind = rule.remote?.kind ?? "any";
-  return kind === "any" || kind === "" || (kind === "zone" && rule.remote?.zone_id === zoneId);
+function cidrsReach(cidrs: readonly string[] | undefined, family: Family | undefined): boolean {
+  return (cidrs ?? []).some((cidr) => {
+    const prefix = parsePrefix(cidr);
+    return prefix !== undefined && (family === undefined || prefix.addr.v === family);
+  });
+}
+
+/** A trusted zone is accepted by each interface (both families) and by its CIDRs. */
+function trustedZoneReaches(zone: GuardZone | undefined, family: Family | undefined): boolean {
+  if (!zone) return false;
+  return (zone.interfaces ?? []).length > 0 || cidrsReach(zone.cidrs, family);
+}
+
+/**
+ * Whether a covering rule whose remote is zone `zone` reaches a socket of this
+ * family. A WireGuard-zone allow with ports is the fast path, `ip saddr
+ * @wg_peers4`: IPv4 peers only. Otherwise a zone with CIDRs is matched by
+ * those CIDRs alone, and a zone without them by its interface.
+ */
+function zoneRuleReaches(rule: GuardRule, zone: GuardZone | undefined, family: Family | undefined): boolean {
+  if (!zone) return false;
+  const fastPath = zone.id === WIREGUARD_ZONE && (rule.protocol === "tcp" || rule.protocol === "udp") && (rule.ports ?? []).length > 0;
+  if (fastPath) return family !== 6;
+  if ((zone.cidrs ?? []).length) return cidrsReach(zone.cidrs, family);
+  return (zone.interfaces ?? []).length > 0;
 }
 
 function plural(count: number, one: string, many: string): string {
   return count === 1 ? one : many;
 }
 
+interface CutEntry {
+  protocol: Protocol;
+  port: number;
+  processes: Set<string>;
+  reason: string;
+}
+
 /**
  * The ports the knock gate or a zone bind reaches today that the table built
- * from these rules and this binding would not accept on that path. One entry
- * per protocol and port; the first reason found stands.
+ * from these rules and this binding would not accept on that path, each
+ * socket judged for its own address family. One entry per protocol and
+ * port; the first reason found stands.
  */
 export function cutOffs(view: ExposureRowView, ctx: ExposureContext, facts: AdoptFacts): CutOff[] {
   const { reality, knock } = facts;
@@ -121,7 +171,7 @@ export function cutOffs(view: ExposureRowView, ctx: ExposureContext, facts: Adop
   const rules = nodeRules(row, ctx);
   const trusted = new Set(row.intent?.binding?.zone_ids ?? []);
   const trustedNames = [...trusted].filter((id) => id !== LOOPBACK_ZONE && id !== PUBLIC_ZONE).map((id) => zones.get(id)?.name || id);
-  const found = new Map<string, { span: Span; reason: string }>();
+  const found = new Map<string, CutEntry>();
 
   for (const listener of reality.listeners ?? []) {
     const protocol = (listener.protocol ?? "").trim().toLowerCase();
@@ -129,12 +179,13 @@ export function cutOffs(view: ExposureRowView, ctx: ExposureContext, facts: Adop
     if ((protocol !== "tcp" && protocol !== "udp") || port < 1 || port > 65535) continue;
     const placement = bindPlacement(listener, zones, interfaces);
     if (placement.kind === "local") continue;
+    const family = parseAddress(listener.address)?.v;
     const covering = rules.filter((rule) => ruleCovers(rule, protocol as Protocol, port));
     const scoped = [...new Set(covering.map((rule) => remoteScope(rule.remote, ctx).label))];
 
     let reason = "";
     if (knock && protocol === "tcp" && knock.ports.includes(port)) {
-      if (covering.some(acceptsFromInternet)) continue;
+      if (covering.some((rule) => acceptsFromEverywhere(rule, family))) continue;
       const still =
         placement.kind === "public" && trustedNames.length
           ? ` Only the trusted ${describeScopes(trustedNames)} ${plural(trustedNames.length, "zone still reaches", "zones still reach")} it.`
@@ -144,11 +195,19 @@ export function cutOffs(view: ExposureRowView, ctx: ExposureContext, facts: Adop
         : `Gated by the SSH knock table today. No rule accepts it, so a knock no longer gets through.${still}`;
     } else if (placement.kind === "zone" && placement.zoneId) {
       const zoneId = placement.zoneId;
-      if (trusted.has(zoneId) || covering.some((rule) => acceptsFromZone(rule, zoneId))) continue;
-      const name = zones.get(zoneId)?.name || zoneId;
-      reason = scoped.length
-        ? `Bound to a ${name} address, reachable through that zone today. This node does not trust the ${name} zone, and the new table accepts the port only from ${describeScopes(scoped)}.`
-        : `Bound to a ${name} address, reachable through that zone today. This node does not trust the ${name} zone and no rule accepts the port from it.`;
+      const zone = zones.get(zoneId);
+      const name = zone?.name || zoneId;
+      const sameZone = covering.filter((rule) => rule.remote?.kind === "zone" && rule.remote.zone_id === zoneId);
+      const anywhere = covering.some((rule) => (rule.remote?.kind ?? "any") === "any" || rule.remote?.kind === "");
+      if (anywhere || (trusted.has(zoneId) && trustedZoneReaches(zone, family)) || sameZone.some((rule) => zoneRuleReaches(rule, zone, family))) continue;
+      if (family && (trusted.has(zoneId) || sameZone.length)) {
+        // The zone is accepted, but only for the other address family.
+        reason = `Bound to an IPv${family} ${name} address, reachable through that zone today. The new table accepts the ${name} zone for IPv${family === 6 ? 4 : 6} sources only, so traffic to this address is dropped.`;
+      } else {
+        reason = scoped.length
+          ? `Bound to a ${name} address, reachable through that zone today. This node does not trust the ${name} zone, and the new table accepts the port only from ${describeScopes(scoped)}.`
+          : `Bound to a ${name} address, reachable through that zone today. This node does not trust the ${name} zone and no rule accepts the port from it.`;
+      }
     } else {
       continue;
     }
@@ -157,15 +216,15 @@ export function cutOffs(view: ExposureRowView, ctx: ExposureContext, facts: Adop
     const existing = found.get(key);
     const process = (listener.process ?? "").trim();
     if (existing) {
-      if (process && !existing.span.processes.includes(process)) existing.span.processes.push(process);
+      if (process) existing.processes.add(process);
       continue;
     }
-    found.set(key, { span: { protocol: protocol as Protocol, from: port, to: port, processes: process ? [process] : [] }, reason });
+    found.set(key, { protocol: protocol as Protocol, port, processes: new Set(process ? [process] : []), reason });
   }
 
   return [...found.values()]
-    .sort((left, right) => left.span.protocol.localeCompare(right.span.protocol) || left.span.from - right.span.from)
-    .map(({ span, reason }) => ({ port: portLabel(span), reason }));
+    .sort((left, right) => left.protocol.localeCompare(right.protocol) || left.port - right.port)
+    .map((entry) => ({ port: portLabel({ protocol: entry.protocol, from: entry.port, to: entry.port, processes: [...entry.processes] }), reason: entry.reason }));
 }
 
 export function adoptPreview(view: ExposureRowView, ctx: ExposureContext, facts: AdoptFacts = {}): AdoptPreview {

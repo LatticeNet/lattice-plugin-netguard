@@ -136,6 +136,47 @@ describe("ports reachable today by another path", () => {
     expect(ssh?.reason).toBe("Gated by the SSH knock table today. The new table accepts it only from 10.7.0.0/24, so a knock from anywhere else no longer gets through.");
   });
 
+  it("counts only every-address as internet-wide: a public /32 admits one knocker", () => {
+    const one: GuardRule = { id: "l-ssh", action: "allow", direction: "ingress", protocol: "tcp", ports: [{ from: 22, to: 22 }], remote: { kind: "cidr", cidr: "203.0.113.7/32" } };
+    const ssh = adoptPreview(withRules([web, one], []), zoned, { reality, knock }).cut.find((item) => item.port === "22/tcp sshd");
+    // Compiles to `ip saddr 203.0.113.7/32 tcp dport 22 accept` ahead of `counter drop`.
+    expect(ssh?.reason).toBe("Gated by the SSH knock table today. The new table accepts it only from 203.0.113.7/32, so a knock from anywhere else no longer gets through.");
+  });
+
+  it("judges a /0 prefix per address family", () => {
+    const v4: GuardRule = { id: "any4", action: "allow", direction: "ingress", protocol: "tcp", ports: [{ from: 22, to: 22 }], remote: { kind: "cidr", cidr: "0.0.0.0/0" } };
+    const v6: GuardRule = { ...v4, id: "any6", remote: { kind: "cidr", cidr: "::/0" } };
+    // 22 is bound on 0.0.0.0 and on ::; `ip saddr 0.0.0.0/0` never matches the IPv6 socket's knockers.
+    const onlyV4 = adoptPreview(withRules([web, v4], []), zoned, { reality, knock }).cut.find((item) => item.port === "22/tcp sshd");
+    expect(onlyV4?.reason).toContain("accepts it only from 0.0.0.0/0");
+    expect(adoptPreview(withRules([web, v4, v6], []), zoned, { reality, knock }).cut.map((item) => item.port)).not.toContain("22/tcp sshd");
+  });
+
+  it("does not let the WireGuard fast path, IPv4 peers only, keep an IPv6 socket", () => {
+    const wg: GuardZone = { id: "wireguard", name: "wireguard", interfaces: ["wg0"], cidrs: ["10.66.0.0/24"] };
+    const wgCtx: ExposureContext = { groups: [], zones: [lan, wg] };
+    const wgReality: GuardNodeReality = {
+      node_id: "cd-homeserver",
+      collected_at: "2026-09-30T09:00:00Z",
+      interfaces: [{ name: "wg0", addresses: ["10.66.0.5/24", "fd00:66::5/64"] }],
+      listeners: [
+        { protocol: "tcp", address: "10.66.0.5", port: 9100, process: "node_exporter" },
+        { protocol: "tcp", address: "fd00:66::5", port: 9101, process: "exporter6" },
+      ],
+    };
+    const fromWg: GuardRule = { id: "wg", action: "allow", direction: "ingress", protocol: "tcp", ports: [{ from: 9100, to: 9101 }], remote: { kind: "zone", zone_id: "wireguard" } };
+    const cut = adoptPreview(withRules([fromWg]), wgCtx, { reality: wgReality }).cut;
+    // `ip saddr @wg_peers4 tcp dport { 9100, 9101 } accept`: the IPv4 socket keeps its path, the IPv6 one does not.
+    expect(cut).toEqual([
+      {
+        port: "9101/tcp exporter6",
+        reason: "Bound to an IPv6 wireguard address, reachable through that zone today. The new table accepts the wireguard zone for IPv4 sources only, so traffic to this address is dropped.",
+      },
+    ]);
+    // Trusting the zone accepts wg0 by interface, both families.
+    expect(adoptPreview(withRules([fromWg], ["office", "wireguard"]), wgCtx, { reality: wgReality }).cut).toEqual([]);
+  });
+
   it("names a socket bound to a zone this node does not trust", () => {
     const preview = adoptPreview(withRules([web]), zoned, { reality, knock });
     expect(preview.cut).toContainEqual({
