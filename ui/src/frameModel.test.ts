@@ -46,10 +46,10 @@ describe("netguard frame model", () => {
     expect(main.indexOf("@latticenet/plugin-bridge/chassis.css")).toBeGreaterThan(-1);
     expect(main.indexOf("@latticenet/plugin-bridge/chassis.css")).toBeLessThan(main.indexOf("./styles.css"));
     const app = read("./App.vue");
-    for (const part of ["PcWorkspace", "PcPageHeader", "PcProofLine", "PcStatStrip", "PcToolbar", "PcLensTabs", "PcPanel", "useOverlayEscape"]) {
+    for (const part of ["PcWorkspace", "PcPageHeader", "PcProofLine", "PcStatStrip", "PcToolbar", "PcLensTabs", "PcPanel", "PcSidePanel", "useOverlayEscape"]) {
       expect(app, part).toContain(part);
     }
-    for (const editor of ["ApplyDialog", "GroupEditor", "ZoneEditor", "BindingEditor"]) {
+    for (const editor of ["ApplyDialog", "AdoptDialog", "GroupEditor", "ZoneEditor", "BindingEditor"]) {
       const source = read(`./components/${editor}.vue`);
       expect(source, editor).toContain("PcModal");
       expect(source, editor).not.toContain("getBoundingClientRect");
@@ -71,16 +71,17 @@ describe("netguard frame model", () => {
     expect(css).toMatch(/\.pc-table-wrap\[data-overflow="x"\]\s*\{[^}]*overflow-x:\s*auto/);
   });
 
-  it("renders on a chassis whose lens strip wraps in a 375 frame", () => {
-    // Four tabs with counts need 378px and the stretched strip has 341 at
-    // 375. A chassis that scrolls the strip instead hides the Zones tab off
-    // the right edge with nothing to say it is there.
-    const css = read("../node_modules/@latticenet/plugin-bridge/dist/chassis/chassis.css").replace(/\/\*[\s\S]*?\*\//g, "");
-    const narrow = css.slice(css.indexOf("@media (max-width: 620px)"));
-    const strip = narrow.match(/\n\s*\.pc-lens-tabs\s*\{([^}]*)\}/);
+  it("keeps the layer tabs on one row in a 375 frame", () => {
+    // The chassis wraps the strip below 620px, which put Zones on a second
+    // row under the other three. Design 23 section 3.4 keeps one row that
+    // scrolls sideways; the tighter padding makes the four labels fit at 375,
+    // so nothing is hidden there, and a narrower frame scrolls instead.
+    const styles = read("./styles.css").replace(/\/\*[\s\S]*?\*\//g, "");
+    const narrow = styles.slice(styles.indexOf("@media (max-width: 620px)"));
+    const strip = narrow.match(/\.pc-toolbar \.pc-lens-tabs\s*\{([^}]*)\}/);
     expect(strip, "a narrow .pc-lens-tabs rule").toBeTruthy();
-    expect(strip![1]).toMatch(/flex-wrap:\s*wrap/);
-    expect(strip![1]).not.toMatch(/overflow-x/);
+    expect(strip![1]).toMatch(/flex-wrap:\s*nowrap/);
+    expect(strip![1]).toMatch(/overflow-x:\s*auto/);
   });
 
   it("keeps the exposure table inside a 1024 frame", () => {
@@ -95,23 +96,39 @@ describe("netguard frame model", () => {
     expect(minWidth).toBeLessThanOrEqual(1024 - 2 * 24 - 2);
   });
 
-  it("gives the toolbar the same shape on every lens", () => {
-    // The reference page keeps a search field and one primary action in the
-    // toolbar on every tab. A search that vanishes when the lens changes is a
-    // control the operator cannot learn.
+  it("gives every collection layer the same toolbar", () => {
+    // The layer tabs, then one search field that narrows whichever collection
+    // is open, then one primary action. Overview is not a list, so it is the
+    // one layer without the search; every other layer has it in one place.
     const app = read("./App.vue");
-    expect(app).toMatch(/<template #search>/);
-    expect(app).not.toMatch(/<template v-if="[^"]*" #search>/);
-    expect(app).toMatch(/lens === 'exposure'[^\n]*#primary|#primary[^\n]*lens === 'exposure'|<template v-if="canAdmin && !loading" #primary>/);
+    expect(app).toMatch(/<template v-if="view !== 'overview'" #search>/);
+    expect(app).toMatch(/<template v-if="canAdmin && !loading && view !== 'overview'" #primary>/);
   });
 
-  it("promotes the findings to a lens", () => {
-    // Eleven things the page wants acted on, rendered after a 33 row table
-    // with no route to them, is a list nobody reaches. Lines makes the same
-    // idea an Attention tab; so does this page.
+  it("opens on an Overview that puts what needs a hand first", () => {
+    // Eleven open ports nothing explains, rendered after a 33 row table, is a
+    // list nobody reaches. The default layer is the Overview, and it reads in
+    // the layering rule's order: attention, then the numbers, then the picture.
+    const views = read("./viewState.ts");
+    expect(views).toMatch(/NG_VIEWS: readonly NgView\[\] = \["overview"/);
+    expect(views).toMatch(/DEFAULT_NG_STATE[^\n]*view: "overview"/);
     const app = read("./App.vue");
-    expect(app).toMatch(/const LENSES[^\n]*"attention"/);
-    expect(app).toMatch(/<PcLensTab value="attention"/);
+    const attention = app.indexOf("<AttentionList");
+    const numbers = app.indexOf('<PcStatStrip :count="4"');
+    const picture = app.indexOf("<PortPicture");
+    expect(attention).toBeGreaterThan(-1);
+    expect(numbers).toBeGreaterThan(attention);
+    expect(picture).toBeGreaterThan(numbers);
+  });
+
+  it("opens a node in one addressable panel, not in place under its row", () => {
+    const app = read("./App.vue");
+    expect(app).toContain("<PcSidePanel");
+    expect(app).not.toContain("PcDetailRow");
+    const table = read("./components/ExposureTable.vue");
+    expect(table).not.toContain("PcDetailRow");
+    expect(table).not.toContain("Details");
+    expect(table).toMatch(/:stacked="false"/);
   });
 
   it("prints every absolute instant as UTC with the zone marked", () => {

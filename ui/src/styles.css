@@ -6,9 +6,10 @@
  * `@latticenet/plugin-bridge/chassis.css`, imported before this sheet. It
  * declares the fallbacks for the 42 tokens the console publishes and every
  * `--pc-*` derivation. This sheet adds only what the chassis has no name for:
- * the exposure cell's port list, the in-place node detail (facts cards, the
- * listener and interface tables, the generated ruleset), the findings list,
- * the rule rows under a group, and the editor forms.
+ * the Overview's attention list and ports picture, the exposure cell's port
+ * list, the node panel (facts cards, the listener and interface tables, the
+ * generated ruleset, the node's findings), the row menu, the rule rows under
+ * a group, and the editor forms.
  *
  * Three rules still hold. The frame is a viewport: this document is the only
  * vertical scroller and no block here caps its own height. The console owns
@@ -127,26 +128,14 @@ ul {
   color: var(--muted-foreground);
 }
 
-/* An unexplained port is a button: it opens its finding under the card. The
-   "(!)" and the underline carry "nothing allows this" without the red. */
+/* An unexplained port: the "(!)" and the underline carry "nothing allows
+   this" without the red. The row opens the node's panel, which lists it. */
 .ng-span-open {
-  display: inline;
-  padding: 0 2px;
-  margin: 0 -2px;
-  border: 0;
-  border-radius: var(--radius-sm);
   color: var(--pc-danger-ink);
-  background: transparent;
-  font: inherit;
   font-weight: 650;
   text-decoration: underline;
   text-decoration-thickness: 1px;
   text-underline-offset: 3px;
-  transition: background-color var(--pc-dur) var(--pc-ease);
-}
-
-.ng-span-open:hover {
-  background: var(--pc-danger-soft);
 }
 
 /* A socket whose bind address the snapshot did not carry: listed, muted,
@@ -225,7 +214,7 @@ ul {
   text-decoration: line-through;
 }
 
-/* ── node detail, folded under its row ───────────────────────────────────── */
+/* ── node detail, in the node's side panel ──────────────────────────────── */
 
 .ng-detail {
   display: flex;
@@ -306,15 +295,6 @@ ul {
 .ng-kv dd {
   min-width: 0;
   overflow-wrap: anywhere;
-}
-
-.ng-kv-inline {
-  grid-template-columns: max-content minmax(0, 1fr);
-  gap: var(--space-1) var(--space-3);
-}
-
-.ng-kv-inline dt {
-  margin-top: 0;
 }
 
 .ng-lint {
@@ -452,7 +432,7 @@ ul {
   font-style: italic;
 }
 
-/* ── the attention list (findings) ───────────────────────────────────────── */
+/* ── a node's findings, in its panel ─────────────────────────────────────── */
 
 .ng-attn {
   display: flex;
@@ -479,10 +459,6 @@ ul {
   background-color: var(--pc-hover);
 }
 
-.ng-attn-row[data-open="true"] {
-  background-color: var(--pc-open-surface);
-}
-
 .ng-attn-row[data-ignored="true"] .ng-attn-claim > span {
   color: var(--muted-foreground);
 }
@@ -503,30 +479,6 @@ ul {
   min-width: 52px;
 }
 
-.ng-attn-toggle {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  gap: var(--space-2);
-  border: 0;
-  border-radius: var(--radius-sm);
-  padding: 0;
-  color: inherit;
-  background: transparent;
-  font: inherit;
-  text-align: left;
-}
-
-.ng-attn-chevron {
-  flex: 0 0 auto;
-  color: var(--muted-foreground);
-  transition: transform var(--pc-dur) var(--pc-ease);
-}
-
-.ng-attn-row[data-open="true"] .ng-attn-chevron {
-  transform: rotate(90deg);
-}
-
 .ng-attn-claim {
   display: flex;
   min-width: 0;
@@ -543,31 +495,6 @@ ul {
 .ng-attn-actions {
   display: flex;
   flex: 0 0 auto;
-  align-items: center;
-  gap: var(--space-1);
-}
-
-.ng-attn-readonly {
-  color: var(--muted-foreground);
-  font-size: var(--pc-text-xs);
-}
-
-.ng-attn-body {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  grid-column: 2 / -1;
-  padding-bottom: var(--space-1);
-  font-size: var(--pc-text-xs);
-  line-height: 1.55;
-}
-
-.ng-attn-body p {
-  max-width: var(--pc-measure);
-}
-
-.ng-attn-review {
-  display: flex;
   align-items: center;
   gap: var(--space-1);
 }
@@ -733,6 +660,398 @@ ul {
   color: var(--muted-foreground);
 }
 
+/* ── Overview: attention, numbers, the ports picture ─────────────────────── */
+
+.ng-overview {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.pc-workspace .ng-overview > .pc-stat-strip {
+  margin: 0;
+}
+
+/* Each item is the claim, the rows that prove it, and the one action. The
+   tone is a 3px rule on the leading edge; the words carry the rest. */
+.ng-attention {
+  overflow: clip;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  background: var(--card);
+}
+
+.ng-attention li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-2) var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--pc-hairline);
+  box-shadow: inset 3px 0 0 var(--muted-foreground);
+}
+
+.ng-attention li:last-child {
+  border-bottom: 0;
+}
+
+.ng-attention li[data-tone="danger"] {
+  box-shadow: inset 3px 0 0 var(--destructive);
+}
+
+.ng-attention li[data-tone="warning"] {
+  box-shadow: inset 3px 0 0 var(--warning);
+}
+
+.ng-attention li[data-tone="info"] {
+  box-shadow: inset 3px 0 0 var(--info);
+}
+
+.ng-attention-copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.ng-attention-copy strong {
+  font-size: var(--text-body);
+  font-weight: 620;
+  line-height: 1.4;
+}
+
+.ng-attention-copy span {
+  color: var(--muted-foreground);
+  font-family: var(--font-mono);
+  font-size: var(--text-mono);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.ng-attention-more {
+  display: block;
+  width: 100%;
+  border: 0;
+  border-top: 1px solid var(--border);
+  padding: var(--space-2) var(--space-4);
+  color: var(--pc-accent-ink);
+  background: transparent;
+  font: inherit;
+  font-size: var(--pc-text-xs);
+  font-weight: 650;
+  text-align: left;
+}
+
+.ng-legend {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-3);
+  color: var(--muted-foreground);
+  font-size: var(--pc-text-xs);
+}
+
+.ng-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ng-legend span::before {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  background: var(--ng-verdict);
+  content: "";
+}
+
+[data-verdict="unexplained"] {
+  --ng-verdict: var(--destructive);
+}
+
+[data-verdict="unknown"] {
+  --ng-verdict: var(--warning);
+}
+
+[data-verdict="allowed"] {
+  --ng-verdict: color-mix(in oklab, var(--muted-foreground) 75%, var(--card));
+}
+
+.ng-ports {
+  margin: 0;
+  padding: var(--space-1) 0;
+  list-style: none;
+}
+
+/* Label, bar, counts on one line; the bar takes what is left. */
+.ng-port {
+  display: grid;
+  grid-template-areas: "label bar counts";
+  grid-template-columns: minmax(10rem, 14rem) minmax(0, 1fr) minmax(11rem, 15rem);
+  align-items: center;
+  gap: var(--space-1) var(--space-4);
+  width: 100%;
+  min-height: var(--row-h-compact);
+  border: 0;
+  padding: var(--space-1) var(--space-4);
+  color: inherit;
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  transition: background-color var(--pc-dur) var(--pc-ease);
+}
+
+.ng-port:hover {
+  background: var(--pc-hover);
+}
+
+.ng-port-label {
+  display: flex;
+  min-width: 0;
+  grid-area: label;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
+.ng-port-label strong {
+  flex: 0 0 auto;
+  font-weight: 650;
+}
+
+.ng-port-label small {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted-foreground);
+  font-size: var(--pc-text-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ng-port-bar {
+  display: flex;
+  height: 10px;
+  overflow: hidden;
+  grid-area: bar;
+  border-radius: 3px;
+  background: var(--pc-neutral-soft);
+}
+
+.ng-port-bar > span {
+  height: 100%;
+  background: var(--ng-verdict);
+}
+
+.ng-port-bar > span + span {
+  box-shadow: inset 1px 0 0 var(--card);
+}
+
+.ng-port-counts {
+  grid-area: counts;
+  color: var(--muted-foreground);
+  font-size: var(--pc-text-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.ng-port-counts[data-attention="true"] {
+  color: var(--pc-danger-ink);
+  font-weight: 600;
+}
+
+.ng-ports-more {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-top: 1px solid var(--border);
+  color: var(--muted-foreground);
+  font-size: var(--pc-text-xs);
+}
+
+/* ── Nodes: one click target per row ────────────────────────────────────── */
+
+/* The wrap is the containing block for anything absolutely positioned in a
+   cell (the screen-reader text after a port). Without it that text is placed
+   against the document, outside the wrap's sideways scroll, and a 375 frame
+   grew to 886px. This belongs in the chassis sheet. */
+.pc-table-wrap {
+  position: relative;
+}
+
+.ng-filter {
+  min-height: 30px;
+  padding-block: 4px;
+  font-size: var(--pc-text-xs);
+}
+
+.ng-click-row {
+  cursor: pointer;
+}
+
+/* The node's name is the row's keyboard target: it looks like the bold name
+   it replaces, takes focus, and is where focus returns when the panel closes. */
+.pc-table .ng-row-open {
+  display: block;
+  min-width: 0;
+  flex: 0 1 auto;
+  overflow: hidden;
+  border: 0;
+  border-radius: var(--radius-sm);
+  padding: 0;
+  color: inherit;
+  background: transparent;
+  font: inherit;
+  font-size: var(--text-body);
+  font-weight: 620;
+  line-height: 20px;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ng-click-row:hover .ng-row-open,
+.pc-table .ng-row-open:hover {
+  text-decoration: underline;
+  text-decoration-color: var(--muted-foreground);
+  text-underline-offset: 3px;
+}
+
+/* The open row's surface is opaque on the pinned cells, so rows scrolled
+   sideways underneath never show through. */
+.pc-table tr[data-selected="true"] > td.pc-name,
+.pc-table tr[data-selected="true"] > td.pc-actions {
+  background-color: color-mix(in oklab, var(--primary) 8%, var(--card));
+}
+
+/* ── the node panel ─────────────────────────────────────────────────────── */
+
+.ng-node-panel .pc-side-panel {
+  width: min(680px, 100%);
+}
+
+.ng-node-panel .ng-detail {
+  padding-top: 0;
+}
+
+.ng-node-panel .ng-cards {
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.ng-node-panel .ng-attn-row {
+  grid-template-columns: auto minmax(0, 1fr);
+}
+
+.ng-node-panel .ng-attn-actions {
+  grid-column: 2;
+  justify-content: flex-start;
+}
+
+.ng-panel-notice {
+  margin-bottom: var(--space-3);
+}
+
+.ng-attn-hint {
+  line-height: 1.5;
+}
+
+/* ── the adopt question ─────────────────────────────────────────────────── */
+
+.ng-adopt-zones {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-2);
+  margin-bottom: var(--space-2);
+}
+
+.ng-adopt-zones span {
+  color: var(--muted-foreground);
+}
+
+.ng-adopt-rules {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  padding-left: var(--space-5);
+}
+
+.ng-adopt-rules li small {
+  margin-left: var(--space-2);
+  color: var(--muted-foreground);
+}
+
+.ng-adopt-rules li[data-disabled="true"] > span {
+  color: var(--muted-foreground);
+  text-decoration: line-through;
+}
+
+/* ── the row menu ───────────────────────────────────────────────────────── */
+
+/* Teleported to the body and fixed against the frame, so neither the table's
+   scroll wrap nor its pinned columns can clip it. */
+.rm-menu {
+  position: fixed;
+  z-index: var(--pc-z-modal);
+  box-sizing: border-box;
+  min-width: 200px;
+  max-width: min(320px, calc(100vw - 8px));
+  padding: var(--space-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  color: var(--foreground);
+  background: var(--card);
+  box-shadow: var(--shadow-overlay);
+  font-size: var(--pc-text-sm);
+}
+
+.rm-menu:focus {
+  outline: none;
+}
+
+.rm-item {
+  display: flex;
+  width: 100%;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  padding: 7px var(--space-2);
+  color: inherit;
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.rm-item:hover:not([aria-disabled="true"]),
+.rm-item:focus-visible {
+  outline: none;
+  background: var(--muted);
+}
+
+.rm-item[aria-disabled="true"] {
+  color: var(--muted-foreground);
+  cursor: not-allowed;
+}
+
+.rm-item small {
+  color: var(--muted-foreground);
+  font-size: var(--pc-text-xs);
+  line-height: 1.4;
+}
+
+.rm-item[data-danger="true"] {
+  color: var(--pc-danger-text);
+}
+
+.rm-sep {
+  height: 1px;
+  margin: var(--space-1) 0;
+  background: var(--border);
+}
+
 /* ── narrow frames ───────────────────────────────────────────────────────── */
 
 @media (max-width: 720px) {
@@ -750,20 +1069,59 @@ ul {
   }
 }
 
-/* In the stacked row the exposure cell is a full-width line and may wrap:
-   the sideways scroll is gone, so the ports have to be readable in place. */
-.pc-table[data-stacked="true"] .ng-exposure {
-  width: auto;
-  min-width: 0;
-  overflow: visible;
-  white-space: normal;
-  overflow-wrap: anywhere;
+/* The node column stays pinned at the left edge and gives the rest of the
+   row the room: 38% of the frame, the name truncated with its title. The
+   snapshot dot leaves the name; the Seen column says the same in words. */
+@media (max-width: 720px) {
+  .ng-exposure-table th.pc-name,
+  .ng-exposure-table td.pc-name {
+    width: 38vw;
+    min-width: 0;
+    max-width: 38vw;
+  }
+
+  .ng-exposure-table td.pc-name .pc-state-dot {
+    display: none;
+  }
 }
 
-.pc-table[data-stacked="true"] .ng-confined {
-  flex-wrap: wrap;
-}
+@media (max-width: 620px) {
+  /* One row of layer tabs that scrolls sideways if a frame is narrower than
+     the four labels need (design 23 section 3.4). At 375 they fit: the
+     chassis hides the icons below 480 and the padding comes in a step. */
+  .pc-toolbar .pc-lens-tabs {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
 
-.pc-table[data-stacked="true"] .ng-detail {
-  padding-top: var(--space-2);
+  .pc-toolbar .pc-lens-tab {
+    padding-inline: var(--space-2);
+  }
+
+  .pc-stat-strip.ng-numbers {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .ng-numbers .pc-stat:nth-child(odd) {
+    border-right: 1px solid var(--border);
+  }
+
+  .ng-numbers .pc-stat:nth-last-child(-n + 2) {
+    border-bottom: 0;
+  }
+
+  .ng-attention li {
+    grid-template-columns: minmax(0, 1fr);
+    justify-items: start;
+  }
+
+  .ng-port {
+    grid-template-areas: "label counts" "bar bar";
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .ng-port-counts {
+    text-align: right;
+  }
 }
