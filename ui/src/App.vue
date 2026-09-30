@@ -18,7 +18,7 @@
  * panel that renders an unreported node as a healthy one is worse than no
  * panel at all.
  */
-import { computed, onBeforeUnmount, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
 import { Boxes, LayoutDashboard, Plus, Radar, RefreshCw, Server, Shield, ShieldCheck } from "@lucide/vue";
 
 import { BridgeClient, canCall, type HostInit } from "@latticenet/plugin-bridge";
@@ -550,9 +550,20 @@ function openNode(nodeId: string): void {
   openId.value = nodeId;
 }
 
-function closeNode(): void {
+/**
+ * Close the panel. Focus goes back to whatever opened it; a panel the address
+ * opened (a reload, a pasted link) had no opener, so focus lands on that
+ * node's row instead of falling to the page.
+ */
+async function closeNode(): Promise<void> {
+  const closed = openId.value;
   openId.value = "";
   panelNotice.value = "";
+  await nextTick();
+  const active = document.activeElement;
+  if (closed && (!active || active === document.body)) {
+    document.querySelector<HTMLElement>(`[id="node-${closed}"] .ng-row-open`)?.focus();
+  }
 }
 
 watch(openId, (nodeId) => {
