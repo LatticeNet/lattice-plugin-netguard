@@ -12,6 +12,7 @@ import {
   matchesFilter,
   searchPosture,
   sortPosture,
+  uncompiledNote,
   type PostureRow,
 } from "./posture";
 import { driftTone, type GuardNode, type RealitySummary } from "./netguardModel";
@@ -258,5 +259,17 @@ describe("driftShortReason", () => {
     expect(driftShortReason({ ...base, snapshotStatus: "fresh", appliedTableSha: "a" })).toBe("no managed table");
     expect(driftShortReason({ ...base, snapshotStatus: "fresh", appliedTableSha: "a", managedSha: "b", driftState: "drift" })).toBe("live table differs");
     expect(driftShortReason({ ...base, driftState: "in_sync" })).toBe("");
+  });
+});
+
+describe("a node with no compiled table", () => {
+  it("names the expected state for every coverage NetGuard does not manage", () => {
+    expect(uncompiledNote("observe_only")?.title).toBe("Observe only");
+    expect(uncompiledNote("legacy")?.title).toBe("Legacy baseline, not adopted");
+    expect(uncompiledNote("unbound")?.title).toBe("No binding");
+  });
+
+  it("leaves a managed node's compile error a failure", () => {
+    expect(uncompiledNote("managed")).toBeUndefined();
   });
 });

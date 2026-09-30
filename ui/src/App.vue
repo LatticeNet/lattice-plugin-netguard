@@ -666,8 +666,9 @@ async function ensureReview(nodeId: string, force = false): Promise<void> {
   }
 }
 
+/** The review request's failure; a compile error travels in the review itself. */
 function reviewErrorFor(nodeId: string): string {
-  return reviews.value.get(nodeId)?.compile_error || reviewErrors.value.get(nodeId) || "";
+  return reviewErrors.value.get(nodeId) || "";
 }
 
 /** A fresh review for one node, and the diff baseline its panel opened with. */
@@ -1207,7 +1208,7 @@ function tabCount(value: number, failed: boolean): number | null {
     </PcPanel>
 
     <PcPanel v-else id="pc-panel-zones" role="tabpanel" aria-labelledby="pc-tab-zones">
-      <PcPanelHeader title="Trusted zones" description="Interfaces and CIDRs accepted before any security group is evaluated. A built-in zone is resolved on every node.">
+      <PcPanelHeader title="Trusted zones" description="Interfaces and CIDRs a node accepts before any security group is evaluated, once its binding trusts the zone. A built-in zone is defined on every node; loopback is always accepted.">
         <PcCount v-if="!overviewFailed" :value="plural(overview.zones.length, 'zone', 'zones')" />
       </PcPanelHeader>
       <PcEmptyState v-if="overviewFailed" kind="error" title="Zones were not read">

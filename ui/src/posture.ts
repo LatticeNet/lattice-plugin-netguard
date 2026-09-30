@@ -324,6 +324,35 @@ export function coverageLabel(coverage: Coverage): string {
   return "no binding";
 }
 
+/**
+ * Why a node has no compiled table when that is its expected state. The
+ * review of a node NetGuard does not manage always carries a compile error
+ * (lattice-server netguard.ErrNodeUnmanaged), and heading every such node
+ * with a warning reads the normal state as a failure. Undefined for a
+ * managed node, where a compile error is a real one.
+ */
+export function uncompiledNote(coverage: Coverage): { title: string; body: string } | undefined {
+  switch (coverage) {
+    case "observe_only":
+      return {
+        title: "Observe only",
+        body: "NetGuard compiles no table for this node while its binding only observes. The evidence below is what the node reports. Turn management on in Edit binding to plan a table.",
+      };
+    case "legacy":
+      return {
+        title: "Legacy baseline, not adopted",
+        body: "NetGuard compiles no table for this node until its imported baseline is adopted. Adopt baseline shows what the first apply would install.",
+      };
+    case "unbound":
+      return {
+        title: "No binding",
+        body: "This node has no NetGuard binding, so there is no table to compile. Edit binding attaches groups and zones.",
+      };
+    default:
+      return undefined;
+  }
+}
+
 export function snapshotLabel(status: SnapshotStatus): string {
   if (status === "fresh") return "reporting";
   if (status === "stale") return "stale";

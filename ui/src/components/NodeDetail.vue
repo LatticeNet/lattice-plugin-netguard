@@ -24,6 +24,7 @@ import {
   driftUnknownReason,
   snapshotLabel,
   snapshotToneFor,
+  uncompiledNote,
   type PostureRow,
 } from "../posture";
 import {
@@ -43,6 +44,7 @@ const props = defineProps<{
   row: PostureRow;
   review?: Review;
   loading: boolean;
+  /** The review request failed; a compile error is read from `review`. */
   reviewError: string;
   /** This node's open ports that no rule explains, ignored ones included. */
   findings: readonly Finding[];
@@ -63,6 +65,7 @@ const emit = defineEmits<{
 }>();
 
 const reality = computed(() => props.review?.reality?.reality ?? undefined);
+const uncompiled = computed(() => uncompiledNote(props.row.coverage));
 const suggestions = computed(() => props.review?.suggestions ?? []);
 const portIndex = computed(() => suggestionsByPort(suggestions.value));
 
@@ -146,8 +149,16 @@ function lintTone(severity: string): "error" | "warning" {
     <PcSkeleton v-if="loading" :count="3" :label="`Loading ${row.nodeName}`" />
 
     <template v-else>
-      <PcNotice v-if="reviewError" tone="warning" title="Intent could not be compiled for this node">
+      <PcNotice v-if="reviewError" tone="warning" title="This node's review could not be read">
         <p>{{ endSentence(reviewError) }} The reported evidence below is still accurate.</p>
+      </PcNotice>
+      <!-- A node NetGuard does not manage has no table to compile: that is
+           its state, said as such, not a warning. -->
+      <p v-else-if="review?.compile_error && uncompiled" class="ng-uncompiled">
+        <strong>{{ uncompiled.title }}.</strong> {{ uncompiled.body }}
+      </p>
+      <PcNotice v-else-if="review?.compile_error" tone="warning" title="Intent could not be compiled for this node">
+        <p>{{ endSentence(review.compile_error) }} The reported evidence below is still accurate.</p>
       </PcNotice>
 
       <section v-if="findings.length" class="ng-attn" aria-label="Open ports nothing explains on this node">

@@ -1042,6 +1042,18 @@ ul {
   }
 }
 
+/* A node NetGuard does not manage: its state, in the panel's own voice. */
+.ng-uncompiled {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: var(--pc-text-sm);
+  line-height: 1.5;
+}
+
+.ng-uncompiled strong {
+  color: var(--foreground);
+}
+
 .ng-node-panel .pc-side-panel {
   width: min(680px, 100%);
 }
