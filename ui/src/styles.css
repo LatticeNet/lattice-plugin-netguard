@@ -871,10 +871,12 @@ ul {
 
 /* ── Nodes: one click target per row ────────────────────────────────────── */
 
-/* The wrap is the containing block for anything absolutely positioned in a
+/* chassis-workaround: sr-only text escapes the table scroller.
+   The wrap is the containing block for anything absolutely positioned in a
    cell (the screen-reader text after a port). Without it that text is placed
    against the document, outside the wrap's sideways scroll, and a 375 frame
-   grew to 886px. This belongs in the chassis sheet. */
+   grew to 886px. Remove this rule once plugin-bridge's chassis.css gives
+   .pc-table-wrap `position: relative` itself. */
 .pc-table-wrap {
   position: relative;
 }
@@ -1086,9 +1088,12 @@ ul {
 }
 
 @media (max-width: 620px) {
-  /* One row of layer tabs that scrolls sideways if a frame is narrower than
+  /* chassis-workaround: layer tabs wrap onto two rows at 375.
+     One row of layer tabs that scrolls sideways if a frame is narrower than
      the four labels need (design 23 section 3.4). At 375 they fit: the
-     chassis hides the icons below 480 and the padding comes in a step. */
+     chassis hides the icons below 480 and the padding comes in a step.
+     Remove these two rules once plugin-bridge's chassis.css keeps
+     .pc-lens-tabs on one scrolling row itself. */
   .pc-toolbar .pc-lens-tabs {
     flex-wrap: nowrap;
     overflow-x: auto;
