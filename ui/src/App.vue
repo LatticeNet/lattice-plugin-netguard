@@ -226,6 +226,10 @@ try {
       await refresh();
     })
     .catch((cause) => {
+      // A handshake that never completes leaves the raw init listener
+      // registered for the life of the page; nothing will ever arrive for it.
+      stopInitListener?.();
+      stopInitListener = undefined;
       bootError.value = safeErrorMessage(
         cause,
         "The Lattice console did not hand this page a session, so NetGuard has nothing to show.",
@@ -570,7 +574,8 @@ async function closeNode(): Promise<void> {
   await nextTick();
   const active = document.activeElement;
   if (closed && (!active || active === document.body)) {
-    document.querySelector<HTMLElement>(`[id="node-${closed}"] .ng-row-open`)?.focus();
+    // By id, never through a selector: `closed` came from the address.
+    document.getElementById(`node-${closed}`)?.querySelector<HTMLElement>(".ng-row-open")?.focus();
   }
 }
 
