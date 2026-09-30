@@ -769,7 +769,14 @@ const adoptNodeId = ref("");
 const adopting = ref(false);
 const adoptError = ref("");
 const adoptView = computed(() => views.value.find((candidate) => candidate.row.nodeId === adoptNodeId.value));
-const adoptDetails = computed(() => (adoptView.value ? adoptPreview(adoptView.value, exposureContext.value) : undefined));
+const adoptDetails = computed(() =>
+  adoptView.value
+    ? adoptPreview(adoptView.value, exposureContext.value, {
+        reality: realityByNode.value.get(adoptNodeId.value),
+        knock: knockByNode.value.get(adoptNodeId.value),
+      })
+    : undefined,
+);
 
 function openAdopt(nodeId: string): void {
   adoptError.value = "";

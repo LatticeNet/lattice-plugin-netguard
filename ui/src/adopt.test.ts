@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import { adoptPreview } from "./adopt";
-import type { ExposureContext, NodeExposure, OpenSpan } from "./exposure";
-import type { GuardNode, GuardZone } from "./netguardModel";
+import type { ExposureContext, KnockGate, NodeExposure, OpenSpan } from "./exposure";
+import type { GuardNode, GuardNodeReality, GuardRule, GuardZone } from "./netguardModel";
 import type { DetailState, ExposureRowView } from "./overview";
 import type { PostureRow } from "./posture";
 
@@ -83,5 +83,88 @@ describe("the adopt preview", () => {
   it("prefers the zones the intent resolved", () => {
     const resolved = view({ intent: { ...baseline, zones: [{ id: "tailscale", name: "tailscale" }] } });
     expect(adoptPreview(resolved, ctx).zones).toEqual(["tailscale"]);
+  });
+});
+
+describe("ports reachable today by another path", () => {
+  const tailscale: GuardZone = { id: "tailscale", name: "tailscale", interfaces: ["tailscale0"], cidrs: ["100.64.0.0/10"] };
+  const zoned: ExposureContext = { groups: [], zones: [lan, tailscale] };
+  const reality: GuardNodeReality = {
+    node_id: "cd-homeserver",
+    collected_at: "2026-09-30T09:00:00Z",
+    interfaces: [
+      { name: "eth0", addresses: ["203.0.113.5/24"] },
+      { name: "tailscale0", addresses: ["100.101.1.2/32"] },
+    ],
+    listeners: [
+      { protocol: "tcp", address: "0.0.0.0", port: 22, process: "sshd" },
+      { protocol: "tcp", address: "::", port: 22, process: "sshd" },
+      { protocol: "tcp", address: "100.101.1.2", port: 8443, process: "lattice-console" },
+      { protocol: "tcp", address: "127.0.0.1", port: 5432, process: "postgres" },
+    ],
+  };
+  const knock: KnockGate = { ports: [22] };
+
+  function withRules(rules: GuardRule[], zoneIds = ["office"]): ExposureRowView {
+    const intent: GuardNode = {
+      ...baseline,
+      binding: { ...baseline.binding!, zone_ids: zoneIds },
+      groups: [{ ...baseline.groups![0]!, rules }],
+    };
+    return view({ intent, zoneIds });
+  }
+  const web: GuardRule = { id: "l-web", action: "allow", direction: "ingress", protocol: "tcp", ports: [{ from: 80, to: 80 }], remote: { kind: "any" } };
+
+  it("names a knock-gated SSH port the new table has no rule for, which the first apply closes to knockers", () => {
+    const preview = adoptPreview(withRules([web]), zoned, { reality, knock });
+    const ssh = preview.cut.find((item) => item.port === "22/tcp sshd");
+    expect(ssh?.reason).toBe(
+      "Gated by the SSH knock table today. No rule accepts it, so a knock no longer gets through. Only the trusted Office VPN zone still reaches it.",
+    );
+  });
+
+  it("keeps a knock-gated port the new table accepts from the internet", () => {
+    const ssh: GuardRule = { id: "l-ssh", action: "allow", direction: "ingress", protocol: "tcp", ports: [{ from: 22, to: 22 }], remote: { kind: "any" } };
+    const fromPublic: GuardRule = { ...ssh, id: "l-ssh-zone", remote: { kind: "zone", zone_id: "public" } };
+    expect(adoptPreview(withRules([web, ssh]), zoned, { reality, knock }).cut.map((item) => item.port)).not.toContain("22/tcp sshd");
+    expect(adoptPreview(withRules([web, fromPublic]), zoned, { reality, knock }).cut.map((item) => item.port)).not.toContain("22/tcp sshd");
+  });
+
+  it("says a knock-gated port accepted only from a narrower source loses every other knocker", () => {
+    const mgmt: GuardRule = { id: "l-ssh", action: "allow", direction: "ingress", protocol: "tcp", ports: [{ from: 22, to: 22 }], remote: { kind: "cidr", cidr: "10.7.0.0/24" } };
+    const ssh = adoptPreview(withRules([web, mgmt], []), zoned, { reality, knock }).cut.find((item) => item.port === "22/tcp sshd");
+    expect(ssh?.reason).toBe("Gated by the SSH knock table today. The new table accepts it only from 10.7.0.0/24, so a knock from anywhere else no longer gets through.");
+  });
+
+  it("names a socket bound to a zone this node does not trust", () => {
+    const preview = adoptPreview(withRules([web]), zoned, { reality, knock });
+    expect(preview.cut).toContainEqual({
+      port: "8443/tcp lattice-console",
+      reason: "Bound to a tailscale address, reachable through that zone today. This node does not trust the tailscale zone and no rule accepts the port from it.",
+    });
+    // Loopback is never listed, and nothing is listed twice.
+    expect(preview.cut.map((item) => item.port)).toEqual(["22/tcp sshd", "8443/tcp lattice-console"]);
+  });
+
+  it("keeps a zone-bound socket once the zone is trusted or a rule reaches it from that zone or from anywhere", () => {
+    const ports = (v: ExposureRowView) => adoptPreview(v, zoned, { reality }).cut.map((item) => item.port);
+    const console = (remote: GuardRule["remote"]): GuardRule => ({ id: "c", action: "allow", direction: "ingress", protocol: "tcp", ports: [{ from: 8443, to: 8443 }], remote });
+    expect(ports(withRules([web], ["office", "tailscale"]))).toEqual([]);
+    expect(ports(withRules([web, console({ kind: "zone", zone_id: "tailscale" })]))).toEqual([]);
+    expect(ports(withRules([web, console({ kind: "any" })]))).toEqual([]);
+    // An allow from the public zone is `iifname <public>`: tailscale0 traffic never meets it.
+    const publicOnly = adoptPreview(withRules([web, console({ kind: "zone", zone_id: "public" })]), zoned, { reality }).cut;
+    expect(publicOnly[0]?.reason).toContain("accepts the port only from the public zone");
+  });
+
+  it("lists nothing it has not read, and nothing without a snapshot", () => {
+    expect(adoptPreview(view({ snapshotStatus: "stale" }), zoned, { reality, knock }).cut).toEqual([]);
+    expect(adoptPreview(withRules([web]), zoned, {}).cut).toEqual([]);
+  });
+
+  it("prints a udp port once, not as 51820/udp/udp", () => {
+    const udp = view();
+    udp.exposure.open = [{ protocol: "udp", from: 51820, to: 51820, processes: [], verdict: "unexplained" }];
+    expect(adoptPreview(udp, ctx).dropped).toEqual(["51820/udp"]);
   });
 });

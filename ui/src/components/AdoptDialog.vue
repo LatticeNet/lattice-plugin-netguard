@@ -5,7 +5,9 @@
  * replaces whatever firewall the node runs now with a default-drop table
  * built from the baseline's rules. So the dialog shows what that table
  * accepts, which zones it trusts, and which ports open right now it would
- * close, before the operator agrees. Nothing here is guessed: open ports are
+ * close, including ports reachable today only through the knock gate or a
+ * zone bind that the new table would not keep, before the operator agrees.
+ * Nothing here is guessed: open ports are
  * named only from a fresh snapshot, and the nft text itself is left to Review
  * and apply, which is the only place the server compiles it.
  */
@@ -80,12 +82,29 @@ function close(): void {
         </div>
       </section>
 
-      <PcNotice v-if="preview.dropped.length" title="Open now, and closed by that apply">
-        <p class="pc-mono">{{ preview.dropped.join(', ') }}</p>
-        <p v-if="preview.uncertain.length">Also open with a bind the snapshot does not report, so they may close too: <span class="pc-mono">{{ preview.uncertain.join(', ') }}</span></p>
-      </PcNotice>
-      <PcNotice v-else-if="evidenceNote" tone="warning"><p>{{ evidenceNote }}</p></PcNotice>
-      <p v-else class="ng-subtle">Every port this node has open to the internet is accepted by a rule above{{ preview.uncertain.length ? `, except ${preview.uncertain.join(', ')}, whose bind the snapshot does not report` : '' }}.</p>
+      <PcNotice v-if="evidenceNote" tone="warning"><p>{{ evidenceNote }}</p></PcNotice>
+      <template v-else>
+        <PcNotice v-if="preview.dropped.length" title="Open now, and closed by that apply">
+          <p class="pc-mono">{{ preview.dropped.join(', ') }}</p>
+        </PcNotice>
+        <!-- Not "open with no rule": these reach the node through the knock
+             gate or a zone bind today, and the new table does not keep that
+             path. Never folded into the all-clear below. -->
+        <PcNotice v-if="preview.cut.length" title="Reachable today by another path, and not accepted by the new table">
+          <ul class="ng-adopt-cut">
+            <li v-for="item in preview.cut" :key="item.port">
+              <strong class="pc-mono">{{ item.port }}</strong>
+              <span>{{ item.reason }}</span>
+            </li>
+          </ul>
+        </PcNotice>
+        <p v-if="(preview.dropped.length || preview.cut.length) && preview.uncertain.length">
+          Also open with a bind the snapshot does not report, so they may close too: <span class="pc-mono">{{ preview.uncertain.join(', ') }}</span>
+        </p>
+        <p v-if="!preview.dropped.length && !preview.cut.length" class="ng-subtle">
+          Every port this node listens on beyond loopback stays reachable the way it is today: a rule above or a trusted zone accepts it{{ preview.uncertain.length ? `, except ${preview.uncertain.join(', ')}, whose bind the snapshot does not report` : '' }}.
+        </p>
+      </template>
 
       <p class="ng-subtle">The exact nft text is compiled once the node is adopted. Review and apply shows it, with the lint findings, before any approval exists.</p>
 
