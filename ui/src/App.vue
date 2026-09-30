@@ -18,7 +18,7 @@
  * panel that renders an unreported node as a healthy one is worse than no
  * panel at all.
  */
-import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
+import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { Boxes, Plus, Radar, RefreshCw, Shield, ShieldCheck } from "@lucide/vue";
 
 import { BridgeClient, canCall, type HostInit } from "@latticenet/plugin-bridge";
@@ -113,6 +113,7 @@ import {
 import { coverageLabel, countPosture, joinPosture, type PostureRow } from "./posture";
 import type { MenuItem } from "./rowMenu";
 import { useNow } from "./clock";
+import { useNonModalPanel } from "./nonModalPanel";
 import { ageLabel, clockUtc, stampUtc } from "./time";
 import { PANEL_TITLE, decodeNgState, encodeNgState, nodePanelState, type NgPageState, type NgView, type NodeFilter } from "./viewState";
 
@@ -564,21 +565,22 @@ function openNode(nodeId: string): void {
 }
 
 /**
- * Close the panel. Focus goes back to whatever opened it; a panel the address
- * opened (a reload, a pasted link) had no opener, so focus lands on that
- * node's row instead of falling to the page.
+ * Close the panel. Focus goes back to the row of the node that is open now:
+ * with the panel non-modal a row click swaps the node, so that is not always
+ * the row that first opened it, and a panel the address opened (a reload, a
+ * pasted link) had no opener at all. By id, never through a selector: the
+ * id came from the address.
  */
-async function closeNode(): Promise<void> {
+const panelReturn = ref<HTMLElement | null>(null);
+function closeNode(): void {
   const closed = openId.value;
+  panelReturn.value = closed ? (document.getElementById(`node-${closed}`)?.querySelector<HTMLElement>(".ng-row-open") ?? null) : null;
   openId.value = "";
   panelNotice.value = "";
-  await nextTick();
-  const active = document.activeElement;
-  if (closed && (!active || active === document.body)) {
-    // By id, never through a selector: `closed` came from the address.
-    document.getElementById(`node-${closed}`)?.querySelector<HTMLElement>(".ng-row-open")?.focus();
-  }
 }
+
+/* From 768px up the panel sits beside the rows (nonModalPanel.ts). */
+const panelMode = useNonModalPanel(() => Boolean(openId.value) && !bootError.value, "ng-node-panel");
 
 watch(openId, (nodeId) => {
   // The first load reads the review itself; this covers every later open.
@@ -1241,6 +1243,8 @@ function tabCount(value: number, failed: boolean): number | null {
       :description="panelDescription"
       class="ng-node-panel"
       close-label="Close node panel"
+      :return-focus-to="panelReturn"
+      @keydown.capture="panelMode.onKeydownCapture"
       @close="closeNode"
     >
       <PcSkeleton v-if="panelState === 'loading'" :count="6" label="Loading this node" />

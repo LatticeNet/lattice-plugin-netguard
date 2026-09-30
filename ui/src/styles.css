@@ -1026,6 +1026,22 @@ ul {
 
 /* ── the node panel ─────────────────────────────────────────────────────── */
 
+/* chassis-workaround: PcSidePanel is always modal. From 768px up the panel
+   sits beside the rows: no scrim, and clicks reach the rows under it, so a
+   row click swaps the open node (nonModalPanel.ts undoes the Tab trap and
+   aria-modal). Below 768px it stays the full-height modal. Remove once
+   plugin-bridge gives PcSidePanel a non-modal form. */
+@media (min-width: 768px) {
+  .ng-node-panel.pc-overlay[data-kind="panel"] {
+    background: transparent;
+    pointer-events: none;
+  }
+
+  .ng-node-panel .pc-side-panel {
+    pointer-events: auto;
+  }
+}
+
 .ng-node-panel .pc-side-panel {
   width: min(680px, 100%);
 }
