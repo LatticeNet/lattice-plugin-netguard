@@ -1,11 +1,11 @@
 /**
  * Time labels for evidence.
  *
- * This plugin holds no timer (frameModel.test.ts guards that), so a relative
- * age is only true at the moment it is rendered. Every relative label here is
- * therefore paired with the absolute instant it was computed from, and the
- * absolute form is UTC with the zone marked, the way the spec writes
- * `applied 2026-09-02 03:52Z`.
+ * The page never polls its data (frameModel.test.ts guards that); a clock
+ * (clock.ts) only keeps relative ages true while the page is open. Every
+ * relative label is paired with the absolute instant it counts from, shown
+ * beside it or in its title, and the absolute form is UTC with the zone
+ * marked, the way the spec writes `applied 2026-09-02 03:52Z`.
  */
 
 export function parseTime(value: string | undefined): number | undefined {

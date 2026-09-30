@@ -112,6 +112,7 @@ import {
 } from "./pageState";
 import { coverageLabel, countPosture, joinPosture, type PostureRow } from "./posture";
 import type { MenuItem } from "./rowMenu";
+import { useNow } from "./clock";
 import { ageLabel, clockUtc, stampUtc } from "./time";
 import { PANEL_TITLE, decodeNgState, encodeNgState, nodePanelState, type NgPageState, type NgView, type NodeFilter } from "./viewState";
 
@@ -943,12 +944,12 @@ function plural(count: number, one: string, many: string): string {
 }
 
 const newestObserved = computed(() => newestCollectedAt(posture.value));
+/** Ages on this page count from now; the instants they count from are here. */
+const now = useNow();
 const proofTitle = computed(() => {
   if (!observedAt.value) return "";
-  const fetched = `This page fetched at ${clockUtc(observedAt.value)}; every age is measured from then.`;
-  return newestObserved.value
-    ? `Newest node snapshot ${stampUtc(newestObserved.value)}. ${fetched} Refresh to observe again.`
-    : `No node has reported a snapshot. ${fetched}`;
+  const fetched = `This page read the fleet at ${clockUtc(observedAt.value)}. Refresh to read it again.`;
+  return newestObserved.value ? `Newest node snapshot ${stampUtc(newestObserved.value)}. ${fetched}` : `No node has reported a snapshot. ${fetched}`;
 });
 /**
  * The proof line says what the page knows and nothing it does not: when the
@@ -959,7 +960,8 @@ const proofSegments = computed(() => {
   if (realityFailed.value && overviewFailed.value) return ["not read: neither the overview nor node reality answered"];
   if (realityFailed.value) return ["node reality not read", "intent only, see the notice below"];
   const segments: string[] = [];
-  if (newestObserved.value) segments.push(`observed ${clockUtc(newestObserved.value)}, ${ageLabel(newestObserved.value, observedAt.value)} ago`);
+  // The console's form: a relative age here, the absolute instant in the line's title.
+  if (newestObserved.value) segments.push(`observed ${ageLabel(newestObserved.value, now.value)} ago`);
   else if (canSeeReality.value) segments.push("not observed yet");
   else segments.push("reality not readable");
   segments.push(`${plural(counts.value.total, "node", "nodes")} report`);
@@ -1150,7 +1152,7 @@ function tabCount(value: number, failed: boolean): number | null {
         :active-id="openId"
         :menu-for="nodeMenu"
         :ignored="ignored"
-        :observed-at="observedAt"
+        :now="now"
         :can-see-reality="canSeeReality"
         @sort="onSort"
         @open="openNode"

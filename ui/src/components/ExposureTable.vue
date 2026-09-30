@@ -18,7 +18,6 @@ import {
   PcActionsCell,
   PcKindChip,
   PcRow,
-  PcStateDot,
   PcStatePill,
   PcTable,
   PcTd,
@@ -41,7 +40,6 @@ import {
   driftShortReason,
   driftToneFor,
   driftUnknownReason,
-  snapshotToneFor,
   type PostureRow,
 } from "../posture";
 import type { ExposureRowView } from "../overview";
@@ -61,7 +59,8 @@ const props = defineProps<{
   /** Finding keys the operator dismissed for this session. */
   ignored: ReadonlySet<string>;
   /** The instant the page fetched, which every age here is measured against. */
-  observedAt: number;
+  /** Now, for the Seen ages. */
+  now: number;
   canSeeReality: boolean;
 }>();
 
@@ -151,7 +150,7 @@ function driftTitle(row: PostureRow): string {
 function seenLabel(view: ExposureRowView): string {
   const { row } = view;
   if (row.snapshotStatus === "unknown") return "never";
-  return `${ageLabel(row.collectedAt, props.observedAt)} ago`;
+  return `${ageLabel(row.collectedAt, props.now)} ago`;
 }
 
 function seenTitle(view: ExposureRowView): string {
@@ -163,11 +162,6 @@ function seenTitle(view: ExposureRowView): string {
     : `Snapshot collected ${stamp}.`;
 }
 
-/** The snapshot status as the quiet dot at the name baseline. */
-function statusLabel(view: ExposureRowView): string {
-  const status = view.row.snapshotStatus;
-  return status === "fresh" ? "ok" : status === "stale" ? "stale" : "never";
-}
 </script>
 
 <template>
@@ -205,7 +199,6 @@ function statusLabel(view: ExposureRowView): string {
               :aria-current="activeId === view.row.nodeId ? 'true' : undefined"
               @click.stop="openRow($event, view.row.nodeId)"
             >{{ view.row.nodeName }}</button>
-            <PcStateDot :tone="stateTone(snapshotToneFor(view.row.snapshotStatus))" :label="statusLabel(view)" :title="seenTitle(view)" />
           </div>
           <small :title="view.row.nodeId">{{ view.row.nodeId }}</small>
         </td>
