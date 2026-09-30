@@ -106,7 +106,10 @@ function close(): void {
         </p>
       </template>
 
-      <p class="ng-subtle">The exact nft text is compiled once the node is adopted. Review and apply shows it, with the lint findings, before any approval exists.</p>
+      <p class="ng-subtle">
+        This preview reads listening sockets only. Traffic no listening socket shows, such as ESP for IPsec or a DHCP server on a raw socket, is not listed here and can be dropped by that apply too.
+        The exact nft text is compiled once the node is adopted. Review and apply shows it, with the lint findings, before any approval exists.
+      </p>
 
       <PcNotice v-if="error"><p>{{ error }}</p></PcNotice>
     </div>

@@ -38,7 +38,9 @@
  * The server does not compile a baseline before it is adopted (the review of
  * a legacy node carries a compile error, not a ruleset), so the exact nft
  * text is not available here; Review and apply shows it, with the diff,
- * before any approval exists.
+ * before any approval exists. The snapshot lists listening sockets only, so
+ * traffic no listener row shows (ESP for IPsec, a DHCP server on a raw
+ * socket) is outside this preview, and the dialog says so.
  */
 import {
   LOOPBACK_ZONE,
