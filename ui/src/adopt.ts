@@ -45,6 +45,7 @@ import {
   PUBLIC_ZONE,
   bindPlacement,
   describeScopes,
+  foldSpans,
   formatProcesses,
   indexInterfaces,
   nodeRules,
@@ -65,9 +66,9 @@ import type { ExposureRowView } from "./overview";
 /** The builtin zone whose ported allows render as `ip saddr @wg_peers4`. */
 const WIREGUARD_ZONE = "wireguard";
 
-/** A port reachable today by a path the new table does not accept. */
+/** A port, or a bank of adjacent ports, reachable today by a path the new table does not accept. */
 export interface CutOff {
-  /** "22/tcp sshd". */
+  /** "22/tcp sshd", "2222-2224/tcp sshd". */
   port: string;
   /** Which path reaches it today and why the new table does not keep it. */
   reason: string;
@@ -159,8 +160,9 @@ interface CutEntry {
 /**
  * The ports the knock gate or a zone bind reaches today that the table built
  * from these rules and this binding would not accept on that path, each
- * socket judged for its own address family. One entry per protocol and
- * port; the first reason found stands.
+ * socket judged for its own address family. One reason per protocol and
+ * port, the first found; adjacent ports with the same reason fold into a
+ * range the way the dropped list does.
  */
 export function cutOffs(view: ExposureRowView, ctx: ExposureContext, facts: AdoptFacts): CutOff[] {
   const { reality, knock } = facts;
@@ -222,9 +224,11 @@ export function cutOffs(view: ExposureRowView, ctx: ExposureContext, facts: Adop
     found.set(key, { protocol: protocol as Protocol, port, processes: new Set(process ? [process] : []), reason });
   }
 
-  return [...found.values()]
-    .sort((left, right) => left.protocol.localeCompare(right.protocol) || left.port - right.port)
-    .map((entry) => ({ port: portLabel({ protocol: entry.protocol, from: entry.port, to: entry.port, processes: [...entry.processes] }), reason: entry.reason }));
+  return foldSpans(
+    [...found.values()],
+    (entry) => `${entry.protocol}:${entry.reason}`,
+    (entry, span) => ({ ...span, reason: entry.reason }),
+  ).map((span) => ({ port: portLabel(span), reason: span.reason }));
 }
 
 export function adoptPreview(view: ExposureRowView, ctx: ExposureContext, facts: AdoptFacts = {}): AdoptPreview {

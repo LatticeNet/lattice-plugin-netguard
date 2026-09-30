@@ -177,6 +177,15 @@ describe("ports reachable today by another path", () => {
     expect(adoptPreview(withRules([fromWg], ["office", "wireguard"]), wgCtx, { reality: wgReality }).cut).toEqual([]);
   });
 
+  it("folds a bank of knock-gated ports with one reason into a range", () => {
+    const bank: GuardNodeReality = {
+      ...reality,
+      listeners: [2222, 2223, 2224].map((port) => ({ protocol: "tcp", address: "0.0.0.0", port, process: "sshd" })),
+    };
+    const cut = adoptPreview(withRules([web], []), zoned, { reality: bank, knock: { ports: [2222, 2223, 2224] } }).cut;
+    expect(cut.map((item) => item.port)).toEqual(["2222-2224/tcp sshd"]);
+  });
+
   it("names a socket bound to a zone this node does not trust", () => {
     const preview = adoptPreview(withRules([web]), zoned, { reality, knock });
     expect(preview.cut).toContainEqual({

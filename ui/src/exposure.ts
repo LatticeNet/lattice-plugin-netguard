@@ -570,14 +570,25 @@ function classify(
   return { ...base, kind: "open", verdict: "unexplained" };
 }
 
-function foldSpans<T extends Span>(
-  entries: readonly Entry[],
-  keyOf: (entry: Entry) => string,
-  finish: (entry: Entry, span: Span) => T,
+/** One protocol and port with the processes on it, before adjacent ports fold into a span. */
+export interface PortEntry {
+  protocol: Protocol;
+  port: number;
+  processes: Iterable<string>;
+}
+
+/**
+ * Adjacent ports with the same key fold into one span ("31001-31012"), their
+ * processes merged. Sorted by first port, then protocol.
+ */
+export function foldSpans<E extends PortEntry, T extends Span>(
+  entries: readonly E[],
+  keyOf: (entry: E) => string,
+  finish: (entry: E, span: Span) => T,
 ): T[] {
   const sorted = [...entries].sort((a, b) => a.protocol.localeCompare(b.protocol) || a.port - b.port);
   const out: T[] = [];
-  let current: { key: string; entry: Entry; span: Span } | undefined;
+  let current: { key: string; entry: E; span: Span } | undefined;
   for (const entry of sorted) {
     const key = keyOf(entry);
     if (current && current.key === key && current.span.to + 1 === entry.port) {
@@ -650,12 +661,12 @@ export function computeExposure(
   }
 
   const entries = [...byKey.values()];
-  const open = foldSpans<OpenSpan>(
+  const open = foldSpans<Entry, OpenSpan>(
     entries.filter((entry) => entry.kind === "open"),
     (entry) => `${entry.protocol}:${entry.verdict}`,
     (entry, span) => ({ ...span, verdict: entry.verdict ?? "unexplained" }),
   );
-  const confined = foldSpans<ConfinedSpan>(
+  const confined = foldSpans<Entry, ConfinedSpan>(
     entries.filter((entry) => entry.kind === "confined"),
     (entry) => `${entry.protocol}:${entry.bindZone ?? ""}:${(entry.scopes ?? []).join("|")}`,
     (entry, span) => ({ ...span, scopes: entry.scopes ?? [], ...(entry.bindZone ? { bindZone: entry.bindZone } : {}) }),
