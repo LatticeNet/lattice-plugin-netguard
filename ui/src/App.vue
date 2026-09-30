@@ -113,7 +113,7 @@ import {
 import { coverageLabel, countPosture, joinPosture, type PostureRow } from "./posture";
 import type { MenuItem } from "./rowMenu";
 import { ageLabel, clockUtc, stampUtc } from "./time";
-import { decodeNgState, encodeNgState, type NgPageState, type NgView, type NodeFilter } from "./viewState";
+import { PANEL_TITLE, decodeNgState, encodeNgState, nodePanelState, type NgPageState, type NgView, type NodeFilter } from "./viewState";
 
 const SERVICE = "latticenet.netguard/firewall";
 /**
@@ -534,7 +534,15 @@ function onNodeAction(key: string, nodeId: string): void {
 // ── the node panel ──────────────────────────────────────────────────────────
 
 const openView = computed(() => views.value.find((candidate) => candidate.row.nodeId === openId.value));
-const panelTitle = computed(() => openView.value?.row.nodeName ?? (loading.value ? "Loading node" : "Node not found"));
+/**
+ * A node is listed by the overview or the reality roster, so the panel may
+ * say a node is not in the fleet only when both reads landed. After a failed
+ * read it says the node was not read, and offers the retry.
+ */
+const panelState = computed(() =>
+  nodePanelState({ found: Boolean(openView.value), loading: loading.value, readFailed: overviewFailed.value || realityFailed.value }),
+);
+const panelTitle = computed(() => (openView.value ? openView.value.row.nodeName : PANEL_TITLE[panelState.value]));
 const panelDescription = computed(() => {
   const row = openView.value?.row;
   if (!row) return openId.value;
@@ -570,6 +578,12 @@ watch(openId, (nodeId) => {
   // The first load reads the review itself; this covers every later open.
   if (nodeId && init.value && !loading.value) void loadReviewFor(nodeId);
 });
+
+/** The panel's retry: the fleet read again, then the node's review, which a background refresh leaves alone. */
+async function retryPanel(): Promise<void> {
+  await refresh(true);
+  if (openView.value) void loadReviewFor(openView.value.row.nodeId);
+}
 
 // ── findings ────────────────────────────────────────────────────────────────
 
@@ -1204,8 +1218,12 @@ function tabCount(value: number, failed: boolean): number | null {
       close-label="Close node panel"
       @close="closeNode"
     >
-      <PcSkeleton v-if="loading" :count="6" label="Loading this node" />
-      <PcEmptyState v-else-if="!openView" title="This node is not in the fleet this session can see">
+      <PcSkeleton v-if="panelState === 'loading'" :count="6" label="Loading this node" />
+      <PcEmptyState v-else-if="panelState === 'unread'" kind="error" title="This node could not be read">
+        <p>The fleet read failed, so whether <span class="pc-mono">{{ openId }}</span> is in the fleet is not known. The message on the page says what stopped it.</p>
+        <template #actions><PcButton :busy="refreshing" @click="retryPanel">Try again</PcButton></template>
+      </PcEmptyState>
+      <PcEmptyState v-else-if="panelState === 'missing' || !openView" title="This node is not in the fleet this session can see">
         <p>The link names <span class="pc-mono">{{ openId }}</span>, which neither the overview nor the reality roster lists. It may have been deleted, renamed, or be outside this session's scope.</p>
         <template #actions><PcButton @click="closeNode(); showNodes()">Show all nodes</PcButton></template>
       </PcEmptyState>
