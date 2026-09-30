@@ -113,7 +113,6 @@ import {
 import { coverageLabel, countPosture, joinPosture, type PostureRow } from "./posture";
 import type { MenuItem } from "./rowMenu";
 import { useNow } from "./clock";
-import { useNonModalPanel } from "./nonModalPanel";
 import { ageLabel, clockUtc, stampUtc } from "./time";
 import { PANEL_TITLE, decodeNgState, encodeNgState, nodePanelState, type NgPageState, type NgView, type NodeFilter } from "./viewState";
 
@@ -580,9 +579,6 @@ function closeNode(): void {
   openId.value = "";
   panelNotice.value = "";
 }
-
-/* From 768px up the panel sits beside the rows (nonModalPanel.ts). */
-const panelMode = useNonModalPanel(() => Boolean(openId.value) && !bootError.value, "ng-node-panel");
 
 watch(openId, (nodeId) => {
   // The first load reads the review itself; this covers every later open.
@@ -1247,7 +1243,6 @@ function tabCount(value: number, failed: boolean): number | null {
       class="ng-node-panel"
       close-label="Close node panel"
       :return-focus-to="panelReturn"
-      @keydown.capture="panelMode.onKeydownCapture"
       @close="closeNode"
     >
       <PcSkeleton v-if="panelState === 'loading'" :count="6" label="Loading this node" />
