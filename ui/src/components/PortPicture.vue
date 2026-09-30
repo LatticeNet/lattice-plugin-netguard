@@ -46,11 +46,12 @@ function share(count: number): string {
   return props.picture.counted ? `${(count / props.picture.counted) * 100}%` : "0%";
 }
 
-function counts(row: PortRow): string {
-  const parts = [`${plural(row.total, "node", "nodes")}`];
-  if (row.unexplained) parts.push(`${row.unexplained} no rule`);
-  if (row.unknown) parts.push(`${row.unknown} bind not reported`);
-  return parts.join(" · ");
+/** The count's parts; only "no rule" is drawn in the attention colour, the node total stays plain. */
+function counts(row: PortRow): { text: string; attention?: boolean }[] {
+  const parts: { text: string; attention?: boolean }[] = [{ text: plural(row.total, "node", "nodes") }];
+  if (row.unexplained) parts.push({ text: `${row.unexplained} no rule`, attention: true });
+  if (row.unknown) parts.push({ text: `${row.unknown} bind not reported` });
+  return parts;
 }
 
 function rowTitle(row: PortRow): string {
@@ -92,7 +93,12 @@ function rowTitle(row: PortRow): string {
             <span data-verdict="unknown" :style="{ width: share(row.unknown) }" />
             <span data-verdict="allowed" :style="{ width: share(row.allowed) }" />
           </span>
-          <span class="ng-port-counts" :data-attention="row.unexplained ? 'true' : undefined">{{ counts(row) }}</span>
+          <span class="ng-port-counts">
+            <template v-for="(part, index) in counts(row)" :key="part.text">
+              <template v-if="index"> · </template>
+              <span :data-attention="part.attention ? 'true' : undefined">{{ part.text }}</span>
+            </template>
+          </span>
         </button>
       </li>
     </ol>

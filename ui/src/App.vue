@@ -160,16 +160,19 @@ const search = ref(startState.q);
 const nodeFilter = ref<NodeFilter>(startState.show);
 /** The node whose side panel is open, or asked for by a link and not yet loaded. */
 const openId = ref(startState.open);
+/** The groups the operator unfolded on the Groups layer; a search hit inside a rule opens its group without joining this set. */
+const groupsOpen = ref(new Set<string>(startState.groups));
 
 function applyState(state: NgPageState): void {
   view.value = state.view;
   search.value = state.q;
   nodeFilter.value = state.show;
   openId.value = state.open;
+  groupsOpen.value = new Set(state.groups);
 }
 
 const pageState = computed<PageState>(() =>
-  encodeNgState({ view: view.value, open: openId.value, q: search.value, show: nodeFilter.value }),
+  encodeNgState({ view: view.value, open: openId.value, q: search.value, show: nodeFilter.value, groups: [...groupsOpen.value] }),
 );
 
 const channel = channelFromHash(window.location.hash);
@@ -492,7 +495,6 @@ const matchedViews = computed(() => {
 const groupHits = computed(() => new Map(overview.value.groups.map((group) => [group.id, matchesGroup(group, exposureContext.value, needle.value)])));
 const matchedGroups = computed(() => (needle.value ? overview.value.groups.filter((group) => groupHits.value.get(group.id)?.hit) : overview.value.groups));
 const matchedZones = computed(() => (needle.value ? overview.value.zones.filter((zone) => matchesZone(zone, needle.value)) : overview.value.zones));
-const groupsOpen = ref(new Set<string>());
 
 function toggleGroup(groupId: string): void {
   const next = new Set(groupsOpen.value);

@@ -871,8 +871,9 @@ ul {
   --ng-verdict: var(--warning-text);
 }
 
+/* 85%: 3.4:1 against the bar's track in light (4.6 in dark); 75% was 2.8. */
 [data-verdict="allowed"] {
-  --ng-verdict: color-mix(in oklab, var(--muted-foreground) 75%, var(--card));
+  --ng-verdict: color-mix(in oklab, var(--muted-foreground) 85%, var(--card));
 }
 
 .ng-ports {
@@ -950,7 +951,7 @@ ul {
   font-variant-numeric: tabular-nums;
 }
 
-.ng-port-counts[data-attention="true"] {
+.ng-port-counts [data-attention="true"] {
   color: var(--pc-danger-ink);
   font-weight: 600;
 }

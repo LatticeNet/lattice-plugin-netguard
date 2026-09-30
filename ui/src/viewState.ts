@@ -3,12 +3,13 @@
  *
  * `view` is the layer (Overview is the default and is left out of the
  * address), `open` the node whose panel is open, `q` the search on the
- * collection layers, and `show` the Nodes filter. Links from before the
+ * collection layers, `show` the Nodes filter, and `groups` the groups
+ * unfolded on the Groups layer, comma-joined. Links from before the
  * layers still land: `lens=exposure` is Nodes, `lens=attention` is Overview
  * (the attention list opens it), and `expand=<id>` or `node=<id>` opens that
  * node's panel.
  */
-import { putState, type PageState } from "./pageState";
+import { PAGE_STATE_MAX_VALUE_LENGTH, putState, type PageState } from "./pageState";
 
 export type NgView = "overview" | "nodes" | "groups" | "zones";
 export const NG_VIEWS: readonly NgView[] = ["overview", "nodes", "groups", "zones"];
@@ -22,9 +23,26 @@ export interface NgPageState {
   open: string;
   q: string;
   show: NodeFilter;
+  /** Group ids unfolded on the Groups layer. */
+  groups: string[];
 }
 
-export const DEFAULT_NG_STATE: Readonly<NgPageState> = { view: "overview", open: "", q: "", show: "all" };
+export const DEFAULT_NG_STATE: Readonly<NgPageState> = { view: "overview", open: "", q: "", show: "all", groups: [] };
+
+/** Comma-joined ids that fit one page-state value; ids past the limit stay out rather than breaking the value. */
+function joinIds(ids: readonly string[]): string {
+  let out = "";
+  for (const id of ids) {
+    const next = out ? `${out},${id}` : id;
+    if (next.length > PAGE_STATE_MAX_VALUE_LENGTH) break;
+    out = next;
+  }
+  return out;
+}
+
+function splitIds(value: string | undefined): string[] {
+  return (value ?? "").split(",").map((id) => id.trim()).filter(Boolean);
+}
 
 const LEGACY_LENS: Record<string, NgView> = { exposure: "nodes", attention: "overview", groups: "groups", zones: "zones" };
 
@@ -41,6 +59,7 @@ export function encodeNgState(state: NgPageState): PageState {
   // so a search typed on Nodes is not carried into an Overview link.
   if (state.view !== "overview") putState(out, "q", state.q.trim());
   if (state.view === "nodes") putState(out, "show", state.show, DEFAULT_NG_STATE.show);
+  if (state.view === "groups") putState(out, "groups", joinIds(state.groups));
   return out;
 }
 
@@ -53,6 +72,7 @@ export function decodeNgState(state: PageState): NgPageState {
     open: state.open ?? legacyNode,
     q: state.q ?? "",
     show: pick(state.show, NODE_FILTERS) ?? DEFAULT_NG_STATE.show,
+    groups: splitIds(state.groups),
   };
 }
 

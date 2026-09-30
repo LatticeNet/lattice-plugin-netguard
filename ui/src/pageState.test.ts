@@ -181,6 +181,7 @@ describe("the NetGuard page's own state", () => {
     [state({ view: "nodes", q: "postgres", show: "attention", open: "metix-dmit-2" }), { view: "nodes", open: "metix-dmit-2", q: "postgres", show: "attention" }],
     [state({ view: "groups", q: "relay" }), { view: "groups", q: "relay" }],
     [state({ open: "fra-exit-02" }), { open: "fra-exit-02" }],
+    [state({ view: "groups", groups: ["ssh", "relay-hub"] }), { view: "groups", groups: "ssh,relay-hub" }],
   ])("round-trips %#", (value, encoded) => {
     expect(encodeNgState(value)).toEqual(encoded);
     expect(validPageState(encodeNgState(value))).toEqual(encoded);
@@ -192,6 +193,16 @@ describe("the NetGuard page's own state", () => {
     expect(encodeNgState(state({ view: "groups", show: "attention" }))).toEqual({ view: "groups" });
     expect(encodeNgState(state({ view: "nodes", q: "  pg  " }))).toEqual({ view: "nodes", q: "pg" });
     expect(encodeNgState(state({ view: "nodes", q: "x".repeat(PAGE_STATE_MAX_VALUE_LENGTH + 1) }))).toEqual({ view: "nodes" });
+  });
+
+  it("carries unfolded groups only on the Groups layer, and only as many ids as fit", () => {
+    expect(encodeNgState(state({ view: "nodes", groups: ["ssh"] }))).toEqual({ view: "nodes" });
+    const many = Array.from({ length: 40 }, (_, index) => `group-${String(index).padStart(2, "0")}`);
+    const encoded = encodeNgState(state({ view: "groups", groups: many })).groups!;
+    expect(encoded.length).toBeLessThanOrEqual(PAGE_STATE_MAX_VALUE_LENGTH);
+    expect(encoded.startsWith("group-00,group-01,")).toBe(true);
+    expect(encoded.split(",").every((id) => many.includes(id))).toBe(true);
+    expect(decodeNgState({ view: "groups", groups: " ssh, ,relay-hub " }).groups).toEqual(["ssh", "relay-hub"]);
   });
 
   it("opens old links on the layer they meant", () => {
