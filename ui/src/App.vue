@@ -19,7 +19,7 @@
  * panel at all.
  */
 import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
-import { Boxes, LayoutDashboard, Plus, Radar, RefreshCw, Server, Shield, ShieldCheck } from "@lucide/vue";
+import { Boxes, Plus, Radar, RefreshCw, Shield, ShieldCheck } from "@lucide/vue";
 
 import { BridgeClient, canCall, type HostInit } from "@latticenet/plugin-bridge";
 import {
@@ -988,7 +988,27 @@ const matchNote = computed(() => {
   return `${matchedViews.value.length} of ${plural(filteredViews.value.length, "node", "nodes")} match`;
 });
 /** The one creating verb per layer: a zone on Zones, a group everywhere else (a finding resolves into a rule). */
-const primaryVerb = computed<"group" | "zone">(() => (view.value === "zones" ? "zone" : "group"));
+/** Rows the current layer has before any search or filter. */
+const layerRows = computed(() => {
+  if (view.value === "nodes") return posture.value.length;
+  if (view.value === "groups") return overview.value.groups.length;
+  if (view.value === "zones") return overview.value.zones.length;
+  return 0;
+});
+/**
+ * The layer's toolbar: none on Overview, which has no list, and none over a
+ * layer with zero rows and no active search or filter (design 23 section
+ * 3.7); the empty state carries the create verb then.
+ */
+const showToolbar = computed(
+  () =>
+    !loading.value &&
+    !bootError.value &&
+    view.value !== "overview" &&
+    (layerRows.value > 0 || search.value.trim() !== "" || (view.value === "nodes" && nodeFilter.value !== "all")),
+);
+/** The attention count is a number only when both reads landed; otherwise it is not known. */
+const attentionKnown = computed(() => !overviewFailed.value && !realityFailed.value);
 /** A tab's count, or none: a count whose read failed would state a zero nobody read. */
 function tabCount(value: number, failed: boolean): number | null {
   return loading.value || bootError.value || failed ? null : value;
@@ -1013,7 +1033,9 @@ function tabCount(value: number, failed: boolean): number | null {
       </template>
     </PcPageHeader>
 
-    <PcNotice v-if="error" dismissible title="Part of this page could not be loaded" @dismiss="error = ''">
+    <!-- With nothing loaded, the "Nothing could be loaded" block below carries
+         the failure and its one Try again; this notice is for a partial read. -->
+    <PcNotice v-if="error && posture.length" dismissible title="Part of this page could not be loaded" @dismiss="error = ''">
       <p class="ng-pre-line">{{ error }}</p>
       <template #actions><PcButton compact :busy="refreshing" @click="refresh(true)">Try again</PcButton></template>
     </PcNotice>
@@ -1027,38 +1049,34 @@ function tabCount(value: number, failed: boolean): number | null {
       <p>Exposure and drift cannot be shown. Everything below is declared intent only.</p>
     </PcNotice>
 
-    <PcToolbar label="NetGuard toolbar" :data-view="view">
+    <!-- The layers: an underline row of their own, above the layer's own
+         toolbar (design review of wave 1, "Tab decision"). -->
+    <PcToolbar class="ng-layer-bar" label="NetGuard layers">
       <template #tabs>
-        <PcLensTabs v-model="view" label="NetGuard layers">
-          <PcLensTab value="overview" label="Overview">
-            <template #icon><LayoutDashboard :size="14" /></template>
-          </PcLensTab>
-          <PcLensTab value="nodes" label="Nodes" :count="tabCount(counts.total, realityFailed)">
-            <template #icon><Server :size="14" /></template>
-          </PcLensTab>
-          <PcLensTab value="groups" label="Groups" :count="tabCount(overview.groups.length, overviewFailed)">
-            <template #icon><Boxes :size="14" /></template>
-          </PcLensTab>
-          <PcLensTab value="zones" label="Zones" :count="tabCount(overview.zones.length, overviewFailed)">
-            <template #icon><ShieldCheck :size="14" /></template>
-          </PcLensTab>
+        <PcLensTabs v-model="view" class="ng-layer-tabs" label="NetGuard layers">
+          <PcLensTab value="overview" label="Overview" />
+          <PcLensTab value="nodes" label="Nodes" :count="tabCount(counts.total, realityFailed)" />
+          <PcLensTab value="groups" label="Groups" :count="tabCount(overview.groups.length, overviewFailed)" />
+          <PcLensTab value="zones" label="Zones" :count="tabCount(overview.zones.length, overviewFailed)" />
         </PcLensTabs>
       </template>
-      <!-- The search narrows the collection layers; Overview is not a list and has none. -->
-      <template v-if="view !== 'overview'" #search>
+    </PcToolbar>
+
+    <PcToolbar v-if="showToolbar" label="NetGuard toolbar" :data-view="view">
+      <template #search>
         <PcSearchField v-model="search" :label="searchLabel" :placeholder="searchPlaceholder" />
       </template>
-      <template v-if="view === 'nodes' && !loading && !bootError" #note>
+      <template v-if="view === 'nodes'" #note>
         <select v-model="nodeFilter" class="pc-select ng-filter" aria-label="Which nodes to show">
           <option value="all">All nodes</option>
-          <option value="attention">Needs attention ({{ attentionCount }})</option>
+          <option value="attention">Needs attention{{ attentionKnown ? ` (${attentionCount})` : '' }}</option>
         </select>
         <span v-if="matchNote">{{ matchNote }}</span>
       </template>
       <template v-else-if="matchNote || permissionNote" #note>{{ matchNote || permissionNote }}</template>
-      <!-- Overview points at the work; the creating verb lives on the layer it creates in. -->
-      <template v-if="canAdmin && !loading && view !== 'overview'" #primary>
-        <PcButton v-if="primaryVerb === 'zone'" variant="primary" @click="openZone()"><template #icon><Plus :size="15" /></template>New zone</PcButton>
+      <!-- The creating verb lives on the layer it creates in, and only once that layer was read. -->
+      <template v-if="canAdmin && !overviewFailed && (view === 'groups' || view === 'zones')" #primary>
+        <PcButton v-if="view === 'zones'" variant="primary" @click="openZone()"><template #icon><Plus :size="15" /></template>New zone</PcButton>
         <PcButton v-else variant="primary" @click="openGroup()"><template #icon><Plus :size="15" /></template>New group</PcButton>
       </template>
     </PcToolbar>

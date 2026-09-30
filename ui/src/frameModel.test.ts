@@ -71,17 +71,18 @@ describe("netguard frame model", () => {
     expect(css).toMatch(/\.pc-table-wrap\[data-overflow="x"\]\s*\{[^}]*overflow-x:\s*auto/);
   });
 
-  it("keeps the layer tabs on one row in a 375 frame", () => {
-    // The chassis wraps the strip below 620px, which put Zones on a second
-    // row under the other three. Design 23 section 3.4 keeps one row that
-    // scrolls sideways; the tighter padding makes the four labels fit at 375,
-    // so nothing is hidden there, and a narrower frame scrolls instead.
+  it("draws the layers as an underline row, and a segmented control below 620px", () => {
+    // The wave 1 design review's tab decision: layers are an underline row
+    // at 620px and up, a segmented control below, no icons, the way vpn-core
+    // Lines and Sub-Store draw theirs. Boxed tabs with icons read as one more
+    // filter beside the search.
     const styles = read("./styles.css").replace(/\/\*[\s\S]*?\*\//g, "");
+    expect(styles).toMatch(/\.ng-layer-tabs \.pc-lens-tab\[aria-selected="true"\]\s*\{[^}]*box-shadow:\s*inset 0 -2px 0 var\(--primary\)/);
     const narrow = styles.slice(styles.indexOf("@media (max-width: 620px)"));
-    const strip = narrow.match(/\.pc-toolbar \.pc-lens-tabs\s*\{([^}]*)\}/);
-    expect(strip, "a narrow .pc-lens-tabs rule").toBeTruthy();
-    expect(strip![1]).toMatch(/flex-wrap:\s*nowrap/);
-    expect(strip![1]).toMatch(/overflow-x:\s*auto/);
+    expect(narrow).toMatch(/\.ng-layer-tabs\.pc-lens-tabs\s*\{[^}]*border:\s*1px solid var\(--border\)/);
+    const app = read("./App.vue");
+    const tabs = app.slice(app.indexOf("<PcLensTabs"), app.indexOf("</PcLensTabs>"));
+    expect(tabs).not.toContain("#icon");
   });
 
   it("keeps the exposure table inside a 1024 frame", () => {
@@ -96,13 +97,18 @@ describe("netguard frame model", () => {
     expect(minWidth).toBeLessThanOrEqual(1024 - 2 * 24 - 2);
   });
 
-  it("gives every collection layer the same toolbar", () => {
-    // The layer tabs, then one search field that narrows whichever collection
-    // is open, then one primary action. Overview is not a list, so it is the
-    // one layer without the search; every other layer has it in one place.
+  it("puts the layers on a row of their own, above the layer's toolbar", () => {
+    // The layer row, then the layer's own toolbar: search, the Nodes filter,
+    // and the creating verb on the layer it creates in. Overview has no list
+    // and no toolbar, and a layer with zero rows and no search has none
+    // either (design 23 section 3.7).
     const app = read("./App.vue");
-    expect(app).toMatch(/<template v-if="view !== 'overview'" #search>/);
-    expect(app).toMatch(/<template v-if="canAdmin && !loading && view !== 'overview'" #primary>/);
+    const layers = app.indexOf('<PcToolbar class="ng-layer-bar"');
+    const toolbar = app.indexOf('<PcToolbar v-if="showToolbar"');
+    expect(layers).toBeGreaterThan(-1);
+    expect(toolbar).toBeGreaterThan(layers);
+    expect(app).toMatch(/view\.value !== "overview" &&/);
+    expect(app).toMatch(/<template v-if="canAdmin && !overviewFailed && \(view === 'groups' \|\| view === 'zones'\)" #primary>/);
   });
 
   it("opens on an Overview that puts what needs a hand first", () => {

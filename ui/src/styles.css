@@ -81,13 +81,109 @@ ul {
 
 /* ── toolbar ─────────────────────────────────────────────────────────────── */
 
-/* Four tabs, the search at its 420px ceiling and the primary action do not
-   quite fit a 1024 frame side by side, and a wrapping flex line places the
-   search at its ceiling first and drops the button under it alone. Giving
-   the search a 240px basis that grows to the ceiling keeps the one-line
-   shape down to the 620px column form, where the chassis stacks the toolbar
-   (the rule stops there: in a column, a basis would set the height). This
-   belongs in the chassis sheet once the four pages agree on it. */
+/* chassis-workaround: PcLensTabs are boxed, carry icons and share the toolbar.
+   Layers are an underline row of their own above the layer's toolbar, and a
+   segmented control below 620px (design review of wave 1, "Tab decision";
+   design 23 section 3.4). These are the rules Sub-Store draws over the
+   chassis tablist (lattice-plugin-sub-store ui/src/styles.css,
+   .ss-layer-tabs), so the tablist keeps its arrow keys and panel ids. The
+   row's hairline and the selected underline are inset shadows, not borders:
+   a tab pulled over a border with a negative margin hangs a pixel out of the
+   sideways scroller and makes it scroll up and down by that pixel. Remove
+   once plugin-bridge ships a layer variant of PcLensTabs. */
+.ng-layer-bar {
+  align-items: center;
+  box-shadow: inset 0 -1px 0 var(--border);
+}
+
+.ng-layer-tabs.pc-lens-tabs {
+  display: flex;
+  flex-wrap: nowrap;
+  align-self: stretch;
+  align-items: flex-end;
+  gap: var(--space-1);
+  max-width: 100%;
+  overflow-x: auto;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  scrollbar-width: thin;
+}
+
+.ng-layer-tabs .pc-lens-tab {
+  flex: 0 0 auto;
+  min-height: 36px;
+  gap: 6px;
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border: 0;
+  border-radius: 0;
+  color: var(--muted-foreground);
+  background: transparent;
+  box-shadow: none;
+  font-size: var(--pc-text-sm);
+  font-weight: 600;
+}
+
+.ng-layer-tabs .pc-lens-tab:hover {
+  color: var(--foreground);
+}
+
+.ng-layer-tabs .pc-lens-tab[aria-selected="true"] {
+  color: var(--foreground);
+  background: transparent;
+  box-shadow: inset 0 -2px 0 var(--primary);
+}
+
+.ng-layer-tabs .pc-lens-tab:focus-visible {
+  border-radius: var(--radius-sm);
+  outline: 2px solid var(--ring, var(--primary));
+  outline-offset: -2px;
+}
+
+.ng-layer-tabs .pc-count {
+  color: var(--muted-foreground);
+}
+
+.ng-layer-tabs .pc-lens-tab[aria-selected="true"] .pc-count {
+  color: var(--foreground);
+}
+
+@media (max-width: 620px) {
+  .ng-layer-bar {
+    box-shadow: none;
+  }
+
+  .ng-layer-tabs.pc-lens-tabs {
+    gap: 0;
+    padding: 2px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    background: var(--card);
+  }
+
+  /* 8px a side, not Sub-Store's 12: four tabs with their counts then fit a
+     375 frame (331px of 341) instead of cutting Zones at the edge. */
+  .ng-layer-tabs .pc-lens-tab {
+    min-height: 30px;
+    padding: 4px var(--space-2);
+    border-radius: calc(var(--radius-md) - 2px);
+  }
+
+  .ng-layer-tabs .pc-lens-tab[aria-selected="true"] {
+    background: var(--muted);
+    box-shadow: inset 0 0 0 1px var(--border);
+  }
+}
+
+/* The search at its 420px ceiling, the Nodes filter and the primary action
+   do not quite fit a 1024 frame side by side, and a wrapping flex line
+   places the search at its ceiling first and drops the button under it
+   alone. Giving the search a 240px basis that grows to the ceiling keeps the
+   one-line shape down to the 620px column form, where the chassis stacks
+   the toolbar (the rule stops there: in a column, a basis would set the
+   height). This belongs in the chassis sheet once the four pages agree on it. */
 @media (min-width: 621px) {
   .pc-toolbar > .pc-search {
     flex: 1 1 240px;
@@ -1106,22 +1202,6 @@ ul {
 }
 
 @media (max-width: 620px) {
-  /* chassis-workaround: layer tabs wrap onto two rows at 375.
-     One row of layer tabs that scrolls sideways if a frame is narrower than
-     the four labels need (design 23 section 3.4). At 375 they fit: the
-     chassis hides the icons below 480 and the padding comes in a step.
-     Remove these two rules once plugin-bridge's chassis.css keeps
-     .pc-lens-tabs on one scrolling row itself. */
-  .pc-toolbar .pc-lens-tabs {
-    flex-wrap: nowrap;
-    overflow-x: auto;
-    scrollbar-width: none;
-  }
-
-  .pc-toolbar .pc-lens-tab {
-    padding-inline: var(--space-2);
-  }
-
   .pc-stat-strip.ng-numbers {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
