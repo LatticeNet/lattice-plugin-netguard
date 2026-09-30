@@ -769,8 +769,10 @@ ul {
   --ng-verdict: var(--destructive);
 }
 
+/* The warning ink, not the fill: the fill is 2.5:1 on a light card, under
+   the 3:1 a mark the operator reads needs. */
 [data-verdict="unknown"] {
-  --ng-verdict: var(--warning);
+  --ng-verdict: var(--warning-text);
 }
 
 [data-verdict="allowed"] {
