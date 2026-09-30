@@ -3,17 +3,17 @@
  * Security groups as group rows, with their ordered rules folded underneath.
  *
  * The group row carries the facts the list is scanned for: the name, how many
- * rules, what the merged rules let in, how many nodes use it, and where it
- * came from. The rules print only while the group is open, one child row each,
- * with the action as a kind chip and the rule as a sentence in mono. Order is
- * meaning in nftables, so the rows are numbered and never re-sorted.
+ * rules, what the merged rules let in, and how many nodes use it. A click on
+ * the row folds its rules open; Edit and Delete live in the row's one menu.
+ * The id prints under the name only where it says something the name does
+ * not, and a legacy baseline is the only source that earns a chip. The rules
+ * print only while the group is open, one child row each, with the action as
+ * a kind chip and the rule as a sentence in mono. Order is meaning in
+ * nftables, so the rows are numbered and never re-sorted.
  */
-import { Pencil, Trash2 } from "@lucide/vue";
-
 import {
   PcActionsCell,
   PcGroupRow,
-  PcIconButton,
   PcKindChip,
   PcNameCell,
   PcRow,
@@ -24,6 +24,8 @@ import {
 
 import { allowsPreview, ruleSentence, usedByNodes, type ExposureContext } from "../exposure";
 import type { GuardNode, GuardRule, SecurityGroup } from "../netguardModel";
+import type { MenuItem } from "../rowMenu";
+import RowMenu from "./RowMenu.vue";
 
 const props = defineProps<{
   groups: readonly SecurityGroup[];
@@ -39,7 +41,30 @@ const emit = defineEmits<{
   (event: "delete", group: SecurityGroup): void;
 }>();
 
-const COLUMNS = 5;
+const COLUMNS = 4;
+
+const MENU: MenuItem[] = [
+  { key: "edit", label: "Edit rules" },
+  { key: "delete", label: "Delete group", danger: true },
+];
+
+function onMenu(key: string, group: SecurityGroup): void {
+  if (key === "edit") emit("edit", group);
+  else if (key === "delete") emit("delete", group);
+}
+
+/** "v4", or "legacy:cd-nas · v1" when the id says something the name does not. */
+function subline(group: SecurityGroup): string {
+  const version = `v${group.version}`;
+  return group.id && group.id !== group.name ? `${group.id} · ${version}` : version;
+}
+
+/** A click on the row (not on its menu or its chevron) folds the rules, like the chevron does. */
+function onRowClick(event: MouseEvent, group: SecurityGroup): void {
+  const target = event.target as HTMLElement | null;
+  if (target?.closest("button, a, input")) return;
+  emit("toggle", group.id);
+}
 
 function rulesWord(count: number): string {
   return count === 1 ? "1 rule" : `${count} rules`;
@@ -79,20 +104,20 @@ function firstRuleId(group: SecurityGroup): string {
 </script>
 
 <template>
-  <PcTable :min-width="880" label="Security groups">
+  <PcTable :min-width="720" :stacked="false" label="Security groups">
     <template #head>
       <PcTh name>Group / rule</PcTh>
       <PcTh>Rules</PcTh>
       <PcTh numeric>Used by</PcTh>
-      <PcTh>Source</PcTh>
-      <PcTh actions>Actions</PcTh>
+      <PcTh v-if="canAdmin" actions><span class="pc-sr-only">Actions</span></PcTh>
     </template>
 
     <tbody v-for="group in groups" :key="group.id" :data-open="isOpen(group.id) ? 'true' : undefined">
-      <PcGroupRow :id="`group-${group.id}`" :expanded="isOpen(group.id)">
+      <PcGroupRow :id="`group-${group.id}`" class="ng-click-row" :expanded="isOpen(group.id)" @click="onRowClick($event, group)">
         <PcNameCell
           :name="group.name"
-          :id="group.id"
+          :sub="subline(group)"
+          :title="group.description || group.name"
           :expanded="isOpen(group.id)"
           :controls="group.rules?.length ? firstRuleId(group) : undefined"
           @toggle="emit('toggle', group.id)"
@@ -105,12 +130,8 @@ function firstRuleId(group: SecurityGroup): string {
           <span class="pc-group-summary">{{ summary(group) }}</span>
         </PcTd>
         <PcTd label="Used by" numeric :title="`Attached to ${nodesWord(usedBy(group))}`">{{ nodesWord(usedBy(group)) }}</PcTd>
-        <PcTd label="Source">{{ group.source || 'stored' }}<small>v{{ group.version }}</small></PcTd>
-        <PcActionsCell>
-          <template v-if="canAdmin">
-            <PcIconButton bordered :label="`Edit ${group.name}`" @click="emit('edit', group)"><Pencil :size="14" /></PcIconButton>
-            <PcIconButton bordered destructive :label="`Delete ${group.name}`" @click="emit('delete', group)"><Trash2 :size="14" /></PcIconButton>
-          </template>
+        <PcActionsCell v-if="canAdmin">
+          <RowMenu :label="`Actions for ${group.name}`" :items="MENU" @select="(key) => onMenu(key, group)" />
         </PcActionsCell>
       </PcGroupRow>
 
@@ -119,8 +140,8 @@ function firstRuleId(group: SecurityGroup): string {
           <td class="pc-name" data-level="1" data-stack="name">
             <span class="ng-absent">No rules. Everything stays dropped.</span>
           </td>
-          <PcTd :colspan="COLUMNS - 2" stack="summary" />
-          <PcActionsCell />
+          <PcTd :colspan="canAdmin ? COLUMNS - 2 : COLUMNS - 1" stack="summary" />
+          <PcActionsCell v-if="canAdmin" />
         </PcRow>
         <PcRow v-for="(rule, index) in group.rules ?? []" :id="index === 0 ? firstRuleId(group) : undefined" :key="rule.id">
           <td class="pc-name ng-rule" data-level="1" data-stack="name" :data-disabled="rule.disabled ? 'true' : undefined">
@@ -131,8 +152,8 @@ function firstRuleId(group: SecurityGroup): string {
             </span>
             <small v-if="rule.comment" :title="rule.comment">{{ rule.comment }}</small>
           </td>
-          <PcTd :colspan="COLUMNS - 2" stack="summary" />
-          <PcActionsCell />
+          <PcTd :colspan="canAdmin ? COLUMNS - 2 : COLUMNS - 1" stack="summary" />
+          <PcActionsCell v-if="canAdmin" />
         </PcRow>
       </template>
     </tbody>

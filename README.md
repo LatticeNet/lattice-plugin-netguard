@@ -12,61 +12,64 @@ base Dashboard has no NetGuard page of its own.
 
 ## Operator surface
 
-One entry, four lenses, and a proof line under the title that says when the
-fleet was observed (`observed 03:52:10Z, 41s ago · 33 nodes report`), with the
-counts (nodes, managed, observe only, drift, stale) on a stat strip beneath it.
-A tile whose read failed says "unknown" rather than the zero an empty join
-would print. The toolbar keeps one shape on every lens: the lens tabs, one
-search field that narrows whichever lens is open, the match or permission
-note, and one primary action (New group on Exposure, Attention and Groups,
-New zone on Zones).
+One entry with one row of layers (Overview, Nodes, Groups, Zones) and a proof
+line under the title that says when the fleet was observed and what that
+covers (`observed 03:52:10Z, 41s ago · 33 nodes report · 2 stale · 1 never
+reported`). A read that failed prints no count: the proof line says what was
+not read, and a number or tab count it would have fed says "unknown" or
+nothing, never the zero an empty join produces. The layer, the open node, the
+search and the Nodes filter live in the console's address (design 22 page
+state), so a reload or a pasted link lands on the same place; old `?lens=` and
+`?expand=` links still land.
 
 The page renders on the shared plugin chassis, `@latticenet/plugin-bridge/chassis`:
-the same header, stat strip, toolbar, table card, folding rows, chips and
-overlays as the other plugin frames, on the token contract the console
-publishes. `ui/src/styles.css` adds only what NetGuard alone needs (the port
-list in the exposure cell, the in-place node detail, the findings list, the
-rule rows under a group, the editor forms). Until the chassis ships from the
-package registry, `ui/package.json` points at the chassis branch build packed
-into `ui/vendor/latticenet-plugin-bridge-0.1.0-alpha.2.tgz` (bridge `2b8f45e`,
-which lets the sticky table header pin to the frame and wraps the lens strip
-below 620px so the Zones tab stays visible at 375); swap it back to the
-registry version once `0.1.0-alpha.2` is published.
+the same header, tabs, table card, chips and overlays as the other plugin
+frames, on the token contract the console publishes. `ui/src/styles.css` adds
+only what NetGuard alone needs. Until the chassis ships from the package
+registry, `ui/package.json` points at the chassis branch build packed into
+`ui/vendor/latticenet-plugin-bridge-0.1.0-alpha.2.tgz`; swap it back to the
+registry version once `0.1.0-alpha.2` is published. That client drops
+`pageState` from init, so `ui/src/pageState.ts` reads it from the init message
+itself behind the same checks.
 
-- **Exposure:** one row per node answering the first question an operator
-  has: what is open to the internet right now. The column is computed from the
-  node's reported listeners on non-loopback binds, minus what a bound group
-  rule or trusted zone confines; a port nothing explains is red and opens its
-  row on the Attention lens. MANAGED BY names the bound groups, a
-  legacy baseline, or nothing; DRIFT and SEEN carry the drift verdict and the
-  snapshot age. A port the node's SSH knock table gates is confined, not
-  open: it prints as a "gated" chip under the port list. Opening a row folds
-  the node's detail in place beneath it: its unexplained ports, drift hashes,
-  listening sockets, interfaces, foreign nftables tables, and the ruleset its
-  intent compiles to, with the per-node review and apply flow. More than one
-  row can be open, and `?expand=<node_id>` opens one by URL. The row order is
-  settled when the list paints and again when every snapshot has landed, so
-  the rows hold still while the per-node reads stream in.
-- **Attention:** the open ports nothing explains, one row each, with the
-  count on the tab. A row expands into the suggestion the server's review
-  produces, with "Add to group" (the group editor pre-filled with the
-  proposed rule) and "Ignore" (session-local, never saved, undoable from the
-  row). The lens says why it is empty: reality not readable, snapshots still
-  reading, no match, or nothing unexplained.
+- **Overview** (the default): what needs a hand first (ports open to the
+  internet that no rule explains, named with their owners; nodes whose live
+  table drifted from what Lattice applied; a failed apply), each with the one
+  action that clears it. Then four numbers: enforced (managed and in sync),
+  unexplained ports, drift, observe only. Then one picture: every port the
+  fleet has open to the internet, how many nodes open it and how many of those
+  no rule explains, drawn only from fresh snapshots that were read; a port
+  opens Nodes searched for it.
+- **Nodes:** one row per node answering what is open to the internet right
+  now. The exposure column is computed from the node's reported listeners on
+  non-loopback binds, minus what a bound group rule or trusted zone confines;
+  a port nothing explains is red. A port the node's SSH knock table gates is
+  confined, not open: it prints as a "gated" chip. A click on the row opens the
+  node's side panel (`open=<node_id>`) with its unexplained ports and a
+  suggestion for each, drift hashes, listening sockets, interfaces, foreign
+  nftables tables, and the ruleset its intent compiles to, with the per-node
+  review and apply flow. The row's one menu holds Review and apply, Adopt
+  baseline and Edit binding; a disabled item says why under its label. A
+  filter keeps only the nodes that need attention. The columns stay at 375,
+  with the node column pinned.
+- **Adopt baseline** asks first, and shows what the next apply installs: the
+  baseline's rules, the trusted zones, and the ports open now that the apply
+  would close. Adopting writes nothing to the node.
+- **Ignore for this session** hides a finding until the page reloads. Nothing
+  is saved and nothing stops counting it.
 - **Groups:** ordered ingress and egress allow or deny rules over protocols,
   inclusive port ranges, and any/zone/CIDR/node/group/domain remotes, each
   rule read back as a sentence ("allows TCP 22 from 10.7.0.0/24"), with how
-  many nodes bind the group; the rules fold under the group's row. A group is
-  attached to nodes through a binding.
+  many nodes bind the group; a click on the row folds its rules open. A group
+  is attached to nodes through a binding.
 - **Zones:** interfaces and CIDRs accepted before any security group is
   evaluated, with how many nodes trust each. This is how a management path
   stays open.
 
 A node that has never reported is never rendered as healthy, and an empty
 listener list is never rendered as "nothing open" unless a fresh snapshot says
-so. Counts that the control plane does not have read as "not reported", never
-as zero. The page holds no timer: every age is measured from the fetch the
-proof line names, and Refresh observes again.
+so. The page holds no timer: every age is measured from the fetch the proof
+line names, and Refresh observes again.
 
 The exposure classification mirrors `lattice-server/internal/netguard/suggest.go`
 with two stated differences: a private CIDR remote scopes a rule rather than
@@ -77,7 +80,9 @@ matches the applied one is closed by the default policy, not exposed.
 
 `ui/dev.html` runs the real plugin build inside a real iframe against a
 stand-in host that speaks the bridge protocol and the production frame model
-(the frame is a viewport; `lattice.plugin.resize` is accepted and ignored).
+(the frame is a viewport; `lattice.plugin.resize` is accepted and ignored). It
+sends the console's default teal tokens and keeps the plugin's page state in
+its own address, the way the console does.
 
 ```sh
 cd ui
@@ -86,7 +91,8 @@ npm run dev
 # http://localhost:5183/dev.html?scenario=fleet&width=1440
 # scenario=fleet|empty|readonly|failing  width=1440|1024|375  theme=dark|light
 # frame=<pane height>  zoom=<factor>  latency=<ms, holds every answer to look at the skeleton>
-# plugin=lens%3Dgroups or plugin=expand%3Dmetix-dmit-2 (forwarded to the plugin)
+# any other key is page state: view=nodes&open=metix-dmit-2&show=attention
+# oldhost=1 plays a console from before page state (plugin=<query> then reaches the frame's own query)
 ```
 
 ## Safety boundary
