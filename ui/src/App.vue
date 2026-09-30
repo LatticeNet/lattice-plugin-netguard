@@ -18,7 +18,7 @@
  * panel that renders an unreported node as a healthy one is worse than no
  * panel at all.
  */
-import { computed, onBeforeUnmount, ref, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { Boxes, Plus, Radar, RefreshCw, Shield, ShieldCheck } from "@lucide/vue";
 
 import { BridgeClient, canCall, type HostInit } from "@latticenet/plugin-bridge";
@@ -113,6 +113,7 @@ import {
 import { coverageLabel, countPosture, joinPosture, type PostureRow } from "./posture";
 import type { MenuItem } from "./rowMenu";
 import { useNow } from "./clock";
+import { revealSelectedTab } from "./layerTabs";
 import { ageLabel, clockUtc, stampUtc } from "./time";
 import { PANEL_TITLE, decodeNgState, encodeNgState, nodePanelState, type NgPageState, type NgView, type NodeFilter } from "./viewState";
 
@@ -579,6 +580,12 @@ function closeNode(): void {
   openId.value = "";
   panelNotice.value = "";
 }
+
+/* The segmented layer row scrolls sideways in a narrow frame; keep the
+ * selected layer in it, again once the read lands, since the tab counts it
+ * adds widen the row. */
+onMounted(() => revealSelectedTab(document.querySelector(".ng-layer-tabs")));
+watch([view, loading], () => revealSelectedTab(document.querySelector(".ng-layer-tabs")), { flush: "post" });
 
 watch(openId, (nodeId) => {
   // The first load reads the review itself; this covers every later open.

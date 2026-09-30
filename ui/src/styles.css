@@ -142,12 +142,16 @@ ul {
   outline-offset: -2px;
 }
 
+/* vpn-core's count pill: 10px at weight 650, muted on muted, selected or not. */
 .ng-layer-tabs .pc-count {
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
   color: var(--muted-foreground);
-}
-
-.ng-layer-tabs .pc-lens-tab[aria-selected="true"] .pc-count {
-  color: var(--foreground);
+  background: var(--muted);
+  font-size: var(--pc-text-badge);
+  font-weight: 650;
 }
 
 @media (max-width: 620px) {
