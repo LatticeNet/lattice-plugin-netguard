@@ -29,6 +29,8 @@ describe("netguard source policy", () => {
     // The host frame is a viewport it sizes itself and it ignores the
     // reported number. Measuring the document to say how tall it is costs a
     // full synchronous layout on every body resize and buys nothing.
+    // appReads.test.ts checks the messages the mounted page sends; this
+    // catches the usual spellings before a test has to mount anything.
     for (const path of sources()) {
       const source = read(path);
       expect(source, path).not.toContain("ResizeObserver");
@@ -41,7 +43,9 @@ describe("netguard source policy", () => {
     // pointer, and in a panel whose rows open a node and whose buttons apply
     // a firewall that is how the wrong node gets clicked. clock.ts ticks the
     // relative ages, reads nothing, and stops while the page is hidden
-    // (clock.test.ts).
+    // (clock.test.ts). appReads.test.ts is the guard that counts: it mounts
+    // the page and counts its reads. This one is a cheap second check that
+    // misses a poll written under another name.
     const timed = sources().filter((path) => read(path).includes("setInterval("));
     expect(timed).toEqual(["clock.ts"]);
   });
