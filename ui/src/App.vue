@@ -91,6 +91,7 @@ import {
   type SecurityGroup,
 } from "./netguardModel";
 import {
+  attentionEmptyCopy,
   attentionItems,
   matchesPortQuery,
   needsAttention,
@@ -581,7 +582,8 @@ const panelTitle = computed(() => (openView.value ? openView.value.row.nodeName 
 const panelDescription = computed(() => {
   const row = openView.value?.row;
   if (!row) return openId.value;
-  const parts = [row.nodeId, coverageLabel(row.coverage)];
+  // Coverage is read from the binding, which a failed overview read did not return.
+  const parts = [row.nodeId, overviewFailed.value ? "binding not read" : coverageLabel(row.coverage)];
   if (row.collectedAt) parts.push(`snapshot ${stampUtc(row.collectedAt)}`);
   return parts.join(" · ");
 });
@@ -1038,6 +1040,15 @@ const showToolbar = computed(() =>
 const toolbarVerb = computed(() => createVerb({ canAdmin: canAdmin.value, overviewFailed: overviewFailed.value, view: view.value }));
 /** The attention count is a number only when both reads landed; otherwise it is not known. */
 const attentionKnown = computed(() => !overviewFailed.value && !realityFailed.value);
+/** The Nodes attention filter with nothing in it: an all-clear only for what was read. */
+const attentionEmpty = computed(() =>
+  attentionEmptyCopy({
+    realityRead: canSeeReality.value && !realityFailed.value,
+    realityScoped: canSeeReality.value,
+    rulesRead: !overviewFailed.value,
+    reading: readingSnapshots.value,
+  }),
+);
 /** A tab's count, or none: a count whose read failed would state a zero nobody read. */
 function tabCount(value: number, failed: boolean): number | null {
   return loading.value || bootError.value || failed ? null : value;
@@ -1161,10 +1172,9 @@ function tabCount(value: number, failed: boolean): number | null {
         <template #icon><Radar :size="26" /></template>
         <p>This session can see no nodes at all. A node appears here once its agent reports, or once it is bound to a security group.</p>
       </PcEmptyState>
-      <PcEmptyState v-else-if="!filteredViews.length" :title="overviewFailed ? 'No node has drifted or failed an apply' : 'No node needs attention'">
-        <template #icon><ShieldCheck v-if="!overviewFailed" :size="26" /><Radar v-else :size="26" /></template>
-        <p v-if="overviewFailed">No node has a drifted table or a failed apply. Whether a port is open with no rule is not known: the rules were not read.</p>
-        <p v-else>No node has a port open with no rule, a drifted table or a failed apply{{ readingSnapshots ? ', on the snapshots read so far' : '' }}.</p>
+      <PcEmptyState v-else-if="!filteredViews.length" :title="attentionEmpty.title">
+        <template #icon><ShieldCheck v-if="attentionEmpty.allClear" :size="26" /><Radar v-else :size="26" /></template>
+        <p>{{ attentionEmpty.body }}</p>
         <template #actions><PcButton @click="nodeFilter = 'all'">Show all nodes</PcButton></template>
       </PcEmptyState>
       <PcEmptyState v-else-if="!matchedViews.length" kind="no-match" title="No node matches that search">
@@ -1295,6 +1305,7 @@ function tabCount(value: number, failed: boolean): number | null {
           :zones="overview.zones"
           :can-admin="canAdmin"
           :can-plan="canPlan"
+          :rules-read="!overviewFailed"
           @edit-binding="openBinding(openView.row.nodeId)"
           @plan="openApply(openView.row.nodeId)"
           @adopt="openAdopt(openView.row.nodeId)"

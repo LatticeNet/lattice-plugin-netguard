@@ -133,6 +133,34 @@ export function attentionItems(
   return items;
 }
 
+/**
+ * What the Nodes attention filter says when it keeps no node. "No node
+ * needs attention" is an all-clear, so it is said only when both reads
+ * landed; otherwise the copy names what was checked and what is not known.
+ */
+export function attentionEmptyCopy(input: { realityRead: boolean; realityScoped: boolean; rulesRead: boolean; reading: boolean }): {
+  title: string;
+  body: string;
+  allClear: boolean;
+} {
+  if (!input.realityRead) {
+    const why = input.realityScoped ? "node reality was not read" : "this session cannot read node reality";
+    return { title: "No node has a failed apply", body: `No node's last apply failed. Open ports and drift are not known: ${why}.`, allClear: false };
+  }
+  if (!input.rulesRead) {
+    return {
+      title: "No node has drifted or failed an apply",
+      body: "No node has a drifted table or a failed apply. Whether a port is open with no rule is not known: the rules were not read.",
+      allClear: false,
+    };
+  }
+  return {
+    title: "No node needs attention",
+    body: `No node has a port open with no rule, a drifted table or a failed apply${input.reading ? ", on the snapshots read so far" : ""}.`,
+    allClear: true,
+  };
+}
+
 // ── numbers ───────────────────────────────────────────────────────────────
 
 export type NumberTone = "warning" | "error" | "neutral";

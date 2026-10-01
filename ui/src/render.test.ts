@@ -11,6 +11,7 @@ import { renderToString } from "vue/server-renderer";
 import ApplyDialog from "./components/ApplyDialog.vue";
 import AttentionList from "./components/AttentionList.vue";
 import ExposureTable from "./components/ExposureTable.vue";
+import NodeDetail from "./components/NodeDetail.vue";
 import PortPicture from "./components/PortPicture.vue";
 import { computeExposure, type ExposureContext } from "./exposure";
 import type { GuardListener, GuardNodeReality } from "./netguardModel";
@@ -110,6 +111,31 @@ describe("the attention list, rendered", () => {
     expect(await render(AttentionList, { items })).toBe("<!---->");
     const read = await render(AttentionList, { items: attentionItems(views(true), { canSeeReality: true, realityFailed: false, overviewFailed: false }) });
     expect(read).toContain("4 ports open to the internet with no rule, on 2 nodes");
+  });
+});
+
+describe("the node panel, rendered", () => {
+  const managed = row("fra-exit-02", {
+    coverage: "managed",
+    driftState: "in_sync",
+    intent: { node_id: "fra-exit-02", node_name: "fra-exit-02", source: "stored", binding: { node_id: "fra-exit-02", group_ids: [], zone_ids: [], managed: true, version: 1 }, groups: [], zones: [] },
+  });
+  const props = { row: managed, loading: false, reviewError: "", findings: [], ignored: new Set<string>(), zones: [], canAdmin: true, canPlan: true };
+
+  it("offers the binding and the apply when the overview was read", async () => {
+    const html = await render(NodeDetail, { ...props, rulesRead: true });
+    expect(html).toContain("Edit binding");
+    expect(html).toContain("Review and apply");
+  });
+
+  it("offers no action, and says why, when the overview read failed", async () => {
+    const html = await render(NodeDetail, { ...props, rulesRead: false });
+    expect(html).not.toContain("Edit binding");
+    expect(html).not.toContain("Review and apply");
+    expect(html).toContain("the overview read failed, so this node&#39;s binding is not known");
+    expect(html).not.toContain("read-only: this session");
+    expect(html).not.toContain("none attached");
+    expect(html.match(/>not read</g)).toHaveLength(2);
   });
 });
 

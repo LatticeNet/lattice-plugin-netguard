@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { NodeExposure, OpenSpan } from "./exposure";
 import {
   UNKNOWN_VALUE,
+  attentionEmptyCopy,
   attentionItems,
   matchesPortQuery,
   needsAttention,
@@ -116,6 +117,19 @@ describe("the attention list", () => {
   it("folds long proofs into a count", () => {
     const many = Array.from({ length: 6 }, (_, index) => view(`n${index}`, {}, [span(8080 + index, "unexplained")]));
     expect(attentionItems(many, readable)[0]!.proof).toMatch(/· and 3 more nodes$/);
+  });
+
+  it("gives the empty attention filter an all-clear only when both reads landed", () => {
+    const read = { realityRead: true, realityScoped: true, rulesRead: true, reading: false };
+    expect(attentionEmptyCopy(read)).toMatchObject({ title: "No node needs attention", allClear: true });
+    expect(attentionEmptyCopy({ ...read, reading: true }).body).toMatch(/on the snapshots read so far\.$/);
+    const noRules = attentionEmptyCopy({ ...read, rulesRead: false });
+    expect(noRules).toMatchObject({ title: "No node has drifted or failed an apply", allClear: false });
+    expect(noRules.body).not.toMatch(/No node has a port open/);
+    const noReality = attentionEmptyCopy({ ...read, realityRead: false });
+    expect(noReality).toMatchObject({ title: "No node has a failed apply", allClear: false });
+    expect(noReality.body).toBe("No node's last apply failed. Open ports and drift are not known: node reality was not read.");
+    expect(attentionEmptyCopy({ ...read, realityRead: false, realityScoped: false }).body).toMatch(/this session cannot read node reality\.$/);
   });
 
   it("marks the nodes the Nodes filter keeps", () => {
