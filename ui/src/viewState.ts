@@ -97,3 +97,22 @@ export const PANEL_TITLE: Record<NodePanelState, string> = {
   unread: "Node not read",
   missing: "Node not found",
 };
+
+/**
+ * Whether a layer gets its toolbar (search, the Nodes filter, the creating
+ * verb). Overview has no list, so none; and a layer with zero rows and no
+ * search or filter standing has none either (design 23 section 3.7): its
+ * empty state carries the create verb, and a search over nothing is noise.
+ */
+export function showLayerToolbar(input: { loading: boolean; bootError: boolean; view: NgView; rows: number; q: string; show: NodeFilter }): boolean {
+  if (input.loading || input.bootError || input.view === "overview") return false;
+  return input.rows > 0 || input.q.trim() !== "" || (input.view === "nodes" && input.show !== "all");
+}
+
+/** The toolbar's creating verb: on the layer it creates in, for an admin, once that layer was read. */
+export function createVerb(input: { canAdmin: boolean; overviewFailed: boolean; view: NgView }): "group" | "zone" | null {
+  if (!input.canAdmin || input.overviewFailed) return null;
+  if (input.view === "groups") return "group";
+  if (input.view === "zones") return "zone";
+  return null;
+}

@@ -117,7 +117,17 @@ import type { MenuItem } from "./rowMenu";
 import { useNow } from "./clock";
 import { revealSelectedTab } from "./layerTabs";
 import { ageLabel, clockUtc, stampUtc } from "./time";
-import { PANEL_TITLE, decodeNgState, encodeNgState, nodePanelState, type NgPageState, type NgView, type NodeFilter } from "./viewState";
+import {
+  PANEL_TITLE,
+  createVerb,
+  decodeNgState,
+  encodeNgState,
+  nodePanelState,
+  showLayerToolbar,
+  type NgPageState,
+  type NgView,
+  type NodeFilter,
+} from "./viewState";
 
 const SERVICE = "latticenet.netguard/firewall";
 /**
@@ -1014,7 +1024,6 @@ const matchNote = computed(() => {
   if (view.value === "zones") return `${matchedZones.value.length} of ${plural(overview.value.zones.length, "zone", "zones")} match`;
   return `${matchedViews.value.length} of ${plural(filteredViews.value.length, "node", "nodes")} match`;
 });
-/** The one creating verb per layer: a zone on Zones, a group everywhere else (a finding resolves into a rule). */
 /** Rows the current layer has before any search or filter. */
 const layerRows = computed(() => {
   if (view.value === "nodes") return posture.value.length;
@@ -1022,18 +1031,11 @@ const layerRows = computed(() => {
   if (view.value === "zones") return overview.value.zones.length;
   return 0;
 });
-/**
- * The layer's toolbar: none on Overview, which has no list, and none over a
- * layer with zero rows and no active search or filter (design 23 section
- * 3.7); the empty state carries the create verb then.
- */
-const showToolbar = computed(
-  () =>
-    !loading.value &&
-    !bootError.value &&
-    view.value !== "overview" &&
-    (layerRows.value > 0 || search.value.trim() !== "" || (view.value === "nodes" && nodeFilter.value !== "all")),
+/** The layer's toolbar and its creating verb (viewState.ts holds both rules). */
+const showToolbar = computed(() =>
+  showLayerToolbar({ loading: loading.value, bootError: Boolean(bootError.value), view: view.value, rows: layerRows.value, q: search.value, show: nodeFilter.value }),
 );
+const toolbarVerb = computed(() => createVerb({ canAdmin: canAdmin.value, overviewFailed: overviewFailed.value, view: view.value }));
 /** The attention count is a number only when both reads landed; otherwise it is not known. */
 const attentionKnown = computed(() => !overviewFailed.value && !realityFailed.value);
 /** A tab's count, or none: a count whose read failed would state a zero nobody read. */
@@ -1102,8 +1104,8 @@ function tabCount(value: number, failed: boolean): number | null {
       </template>
       <template v-else-if="matchNote || permissionNote" #note>{{ matchNote || permissionNote }}</template>
       <!-- The creating verb lives on the layer it creates in, and only once that layer was read. -->
-      <template v-if="canAdmin && !overviewFailed && (view === 'groups' || view === 'zones')" #primary>
-        <PcButton v-if="view === 'zones'" variant="primary" @click="openZone()"><template #icon><Plus :size="15" /></template>New zone</PcButton>
+      <template v-if="toolbarVerb" #primary>
+        <PcButton v-if="toolbarVerb === 'zone'" variant="primary" @click="openZone()"><template #icon><Plus :size="15" /></template>New zone</PcButton>
         <PcButton v-else variant="primary" @click="openGroup()"><template #icon><Plus :size="15" /></template>New group</PcButton>
       </template>
     </PcToolbar>
