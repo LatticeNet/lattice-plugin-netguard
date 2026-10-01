@@ -75,6 +75,7 @@ describe("the attention list", () => {
     expect(items[0]!.action).toEqual({ label: "Review", kind: "nodes" });
     expect(items[1]!.claim).toBe("2 nodes drifted: the live table differs from what Lattice applied");
     expect(items[1]!.proof).toBe("DMIT-2, FRA-EXIT-02");
+    expect(items[2]!.claim).toBe("The last apply failed");
     expect(items[2]!.proof).toBe("LAX-EXIT-02: selfcheck: control plane unreachable; rolled back");
     expect(items[2]!.action).toEqual({ label: "Open LAX-EXIT-02", kind: "open", nodeId: "lax-exit-02" });
   });
@@ -104,6 +105,12 @@ describe("the attention list", () => {
     const items = attentionItems(fleet, { ...readable, overviewFailed: true });
     expect(items.map((item) => item.key)).toEqual(["drift", "apply-failed"]);
     expect(items.some((item) => /no rule/.test(item.claim))).toBe(false);
+  });
+
+  it("claims only that an apply failed, whatever the error text says happened next", () => {
+    const items = attentionItems([view("a", { lastError: "transport: agent did not answer" }), view("b", { lastError: "rejected before any change" })], readable);
+    expect(items.map((item) => item.claim)).toEqual(["The last apply on 2 nodes failed"]);
+    expect(items[0]!.proof).toBe("A, B");
   });
 
   it("folds long proofs into a count", () => {

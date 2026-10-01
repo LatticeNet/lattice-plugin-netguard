@@ -123,7 +123,9 @@ export function attentionItems(
     items.push({
       key: "apply-failed",
       tone: "warning",
-      claim: `${failed.length === 1 ? "The last apply" : `The last apply on ${failed.length} nodes`} failed and was rolled back`,
+      // last_error is free text; whether anything was rolled back is the
+      // error's to say, and the proof quotes it.
+      claim: `${failed.length === 1 ? "The last apply" : `The last apply on ${failed.length} nodes`} failed`,
       proof: failed.length === 1 ? `${failed[0]!.nodeName}: ${failed[0]!.lastError}` : namedList(failed.map((row) => row.nodeName)),
       action: actionFor(failed, "Show"),
     });
