@@ -393,10 +393,12 @@ function detailStateFor(row: PostureRow): DetailState {
   return detailState.value.get(row.nodeId) ?? "pending";
 }
 
+/* After a failed overview read the rules in hand are empty or left over from
+ * an earlier read; the join then lists every port and judges none of them. */
 const views = computed<ExposureRowView[]>(() =>
   posture.value.map((row) => ({
     row,
-    exposure: computeExposure(row, realityByNode.value.get(row.nodeId), exposureContext.value, knockByNode.value.get(row.nodeId)),
+    exposure: computeExposure(row, realityByNode.value.get(row.nodeId), exposureContext.value, knockByNode.value.get(row.nodeId), !overviewFailed.value),
     detail: detailStateFor(row),
   })),
 );
@@ -408,7 +410,7 @@ const readingSnapshots = computed(
 // ── Overview ────────────────────────────────────────────────────────────────
 
 const attention = computed(() =>
-  attentionItems(views.value, { canSeeReality: canSeeReality.value, realityFailed: realityFailed.value }),
+  attentionItems(views.value, { canSeeReality: canSeeReality.value, realityFailed: realityFailed.value, overviewFailed: overviewFailed.value }),
 );
 const numbers = computed(() =>
   overviewNumbers(counts.value, views.value, {
@@ -516,6 +518,9 @@ watch([search, nodeFilter], () => {
 });
 
 function nodeMenu(row: PostureRow): MenuItem[] {
+  // Which action applies, and why one is closed, is read from the binding; a
+  // failed overview read leaves none or an old one, so the menu offers nothing.
+  if (overviewFailed.value) return [];
   const items: MenuItem[] = [];
   if (canPlan.value) {
     const reason =
@@ -1127,13 +1132,14 @@ function tabCount(value: number, failed: boolean): number | null {
         <PcStatStrip :count="4" label="NetGuard numbers" class="ng-numbers">
           <PcStatCard v-for="number in numbers" :key="number.key" :label="number.label" :value="number.value" :tone="number.tone" :note="number.note" :data-unknown="number.unknown ? 'true' : undefined" />
         </PcStatStrip>
-        <PortPicture v-if="canSeeReality && !realityFailed" :picture="picture" :reading="detailProgress" @port="showPort" @nodes="showNodes" />
+        <PortPicture v-if="canSeeReality && !realityFailed && !overviewFailed" :picture="picture" :reading="detailProgress" @port="showPort" @nodes="showNodes" />
       </template>
     </section>
 
     <PcPanel v-else-if="view === 'nodes'" id="pc-panel-nodes" role="tabpanel" aria-labelledby="pc-tab-nodes">
       <PcPanelHeader title="Nodes" description="What each node has open to the internet, against what you declared. Open a row for its evidence, its generated ruleset and its actions.">
         <PcCount v-if="realityFailed" value="intent only: reality not read" />
+        <PcCount v-else-if="overviewFailed" :value="`${plural(counts.total, 'node', 'nodes')} · rules not read, ports not judged`" />
         <PcCount v-else :value="`${plural(counts.total, 'node', 'nodes')}${attentionCount ? ` · ${attentionCount} need attention` : ''}`" />
       </PcPanelHeader>
 
@@ -1141,9 +1147,10 @@ function tabCount(value: number, failed: boolean): number | null {
         <template #icon><Radar :size="26" /></template>
         <p>This session can see no nodes at all. A node appears here once its agent reports, or once it is bound to a security group.</p>
       </PcEmptyState>
-      <PcEmptyState v-else-if="!filteredViews.length" title="No node needs attention">
-        <template #icon><ShieldCheck :size="26" /></template>
-        <p>No node has a port open with no rule, a drifted table or a failed apply{{ readingSnapshots ? ', on the snapshots read so far' : '' }}.</p>
+      <PcEmptyState v-else-if="!filteredViews.length" :title="overviewFailed ? 'No node has drifted or failed an apply' : 'No node needs attention'">
+        <template #icon><ShieldCheck v-if="!overviewFailed" :size="26" /><Radar v-else :size="26" /></template>
+        <p v-if="overviewFailed">No node has a drifted table or a failed apply. Whether a port is open with no rule is not known: the rules were not read.</p>
+        <p v-else>No node has a port open with no rule, a drifted table or a failed apply{{ readingSnapshots ? ', on the snapshots read so far' : '' }}.</p>
         <template #actions><PcButton @click="nodeFilter = 'all'">Show all nodes</PcButton></template>
       </PcEmptyState>
       <PcEmptyState v-else-if="!matchedViews.length" kind="no-match" title="No node matches that search">

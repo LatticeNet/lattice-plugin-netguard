@@ -30,6 +30,12 @@
  * therefore closed. Everywhere else (legacy baseline, observe only, no
  * binding, drifted) nothing Lattice knows about confines it, and it is red.
  *
+ * Every verdict but the knock gate's is a judgement against declared intent.
+ * When the overview read failed, the rules, zones and bindings in hand are
+ * either empty or left over from an earlier read, so nothing is judged: every
+ * port the internet may reach is "unknown", none is "unexplained", and the
+ * exposure says the rules were not read.
+ *
  * Everything here is pure and DOM-free.
  */
 
@@ -48,9 +54,10 @@ import type { PostureRow } from "./posture";
 export type Protocol = "tcp" | "udp";
 
 /**
- * Why a port is listed the way it is. "unknown" is a socket whose bind
- * address the snapshot does not carry: it may be open, and the cell says so
- * without counting it as either allowed or unexplained.
+ * Why a port is listed the way it is. "unknown" is a socket that may be open
+ * and could not be judged: its bind address is not in the snapshot, or the
+ * declared rules were not read (see `NodeExposure.rulesRead`). The cell says
+ * so without counting it as either allowed or unexplained.
  */
 export type Verdict = "allowed" | "unexplained" | "unknown";
 
@@ -98,6 +105,12 @@ export interface NodeExposure {
   confined: ConfinedSpan[];
   /** Number of ports (not spans) that are open with nothing explaining them. */
   unexplained: number;
+  /**
+   * Whether the declared rules were read. False after a failed overview read:
+   * no port was judged against intent, every open one is "unknown", and
+   * `managedBy` reflects an earlier read or none.
+   */
+  rulesRead: boolean;
   managedBy: ManagedBy;
   /** True when the table Lattice compiled is believed to be what the node runs. */
   enforced: boolean;
@@ -523,6 +536,7 @@ function classify(
   enforced: boolean,
   ctx: ExposureContext,
   knock: KnockGate | undefined,
+  rulesRead: boolean,
 ): Entry | undefined {
   const normalized = normalizeListener(listener);
   if (!normalized) return undefined;
@@ -539,6 +553,10 @@ function classify(
   if (knock && normalized.protocol === "tcp" && knock.ports.includes(normalized.port)) {
     return { ...base, kind: "confined", scopes: [KNOCK_SCOPE] };
   }
+
+  // Everything below reads declared intent: zones, rules, the binding. With
+  // none of it read, a port that may be reachable is listed and not judged.
+  if (!rulesRead) return { ...base, kind: "open", verdict: "unknown" };
 
   // Bound to an overlay or custom zone address: reachable only through that
   // zone, whatever the rules say.
@@ -616,17 +634,19 @@ export function foldSpans<E extends PortEntry, T extends Span>(
  * A stale snapshot is still classified, because last week's sockets are
  * better evidence than none, and the result says it is stale so the table
  * can refuse to print it as current. `knock` is the node's SSH knock gate
- * when the detail reported one with a known scope.
+ * when the detail reported one with a known scope. `rulesRead` is false when
+ * the overview read failed: the ports are listed and none is judged.
  */
 export function computeExposure(
   row: PostureRow,
   reality: GuardNodeReality | undefined,
   ctx: ExposureContext,
   knock?: KnockGate,
+  rulesRead = true,
 ): NodeExposure {
   const managed = managedBy(row, ctx);
-  const enforced = isEnforced(row);
-  const base = { nodeId: row.nodeId, managedBy: managed, enforced };
+  const enforced = rulesRead && isEnforced(row);
+  const base = { nodeId: row.nodeId, managedBy: managed, enforced, rulesRead };
 
   if (!reality || row.snapshotStatus === "unknown") {
     return { ...base, evidence: "none", open: [], confined: [], unexplained: 0 };
@@ -641,7 +661,7 @@ export function computeExposure(
   // most exposed classification wins.
   const byKey = new Map<string, Entry>();
   for (const listener of reality.listeners ?? []) {
-    const entry = classify(listener, row, rules, zones, interfaces, enforced, ctx, knock);
+    const entry = classify(listener, row, rules, zones, interfaces, enforced, ctx, knock, rulesRead);
     if (!entry) continue;
     const key = `${entry.protocol}/${entry.port}`;
     const existing = byKey.get(key);

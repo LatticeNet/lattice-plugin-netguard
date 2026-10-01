@@ -24,7 +24,10 @@
  *
  * Ported from lattice-plugin-vpn-core/ui/dev/host.ts. Harness parameters:
  * `scenario`, `width`, `frame` (the pane height), `theme`, `zoom`, `latency`
- * (hold every answer, to look at the loading state), `oldhost`, and `plugin`
+ * (hold every answer, to look at the loading state), `oldhost`, `fail` (one
+ * read failing while the others answer: `fail=overview` refuses every
+ * overview call, `fail=overview@2` lets the first answer and refuses from the
+ * second, the way a Refresh fails after a good read), and `plugin`
  * (forwarded to the plugin document's own query, the old way to deep-link,
  * read only by a page whose host keeps no state).
  */
@@ -57,7 +60,7 @@ const LIGHT: Record<string, string> = {
 };
 
 /* The harness's own keys. Everything else in the address is page state. */
-const HARNESS_KEYS = new Set(["scenario", "theme", "width", "frame", "zoom", "latency", "plugin", "oldhost"]);
+const HARNESS_KEYS = new Set(["scenario", "theme", "width", "frame", "zoom", "latency", "plugin", "oldhost", "fail"]);
 
 const params = new URLSearchParams(location.search);
 let frameEpoch = 0;
@@ -80,6 +83,19 @@ let readySeen = false;
 /* `latency` holds every answer for this many milliseconds, so the first-load
  * skeleton can be looked at instead of blinking past. Harness only. */
 const latency = Number(params.get("latency") ?? 0);
+/* `fail=<method>[@<n>],...`: refuse that method from its nth call on (the
+ * first by default), counted per frame. Harness only. */
+const failFrom = new Map(
+  (params.get("fail") ?? "")
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .map((part) => {
+      const [method, from] = part.split("@");
+      return [method!, Math.max(1, Number(from) || 1)] as const;
+    }),
+);
+let callCounts = new Map<string, number>();
 let dark = params.get("theme") !== "light";
 let width = params.get("width") ?? "1440";
 /** The height of the console's main region. The frame gets exactly this. */
@@ -126,6 +142,7 @@ function writeAddress(): void {
   if (latency) query.set("latency", String(latency));
   if (pluginQuery) query.set("plugin", pluginQuery);
   if (oldHost) query.set("oldhost", "1");
+  if (params.get("fail")) query.set("fail", params.get("fail")!);
   for (const [key, value] of Object.entries(pageState)) query.set(key, value);
   history.replaceState(null, "", `?${query}`);
 }
@@ -134,6 +151,7 @@ function reload(): void {
   writeAddress();
   applyChrome();
   stateTimes = [];
+  callCounts = new Map();
   readySeen = false;
   stateNote.textContent = oldHost ? "old host: page state not kept" : "";
   // The epoch matters: assigning an identical src, fragment and all, is a
@@ -203,7 +221,10 @@ window.addEventListener("message", (event) => {
       // per-node snapshot reads are quick, like the real ones.
       const delay = latency || (data.method === "reality" && data.payload?.node_id ? 60 : 320);
       window.setTimeout(() => {
-        if (scenario === "failing") {
+        const count = (callCounts.get(data.method) ?? 0) + 1;
+        callCounts.set(data.method, count);
+        const from = failFrom.get(data.method);
+        if (scenario === "failing" || (from !== undefined && count >= from)) {
           post({ type: "lattice.host.error", id: data.id, message: `upstream refused ${key}: 503 service unavailable` });
           return;
         }

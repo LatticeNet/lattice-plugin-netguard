@@ -229,6 +229,31 @@ describe("computeExposure", () => {
     expect(result.open[0]?.verdict).toBe("unexplained");
     expect(result.confined).toEqual([]);
   });
+
+  it("judges no port when the declared rules were not read", () => {
+    const sockets = reality([listener(22), listener(5432, "0.0.0.0", "postgres"), listener(5433, "10.7.0.5", "postgres"), listener(53, "127.0.0.53", "resolved")]);
+
+    // A cold overview failure: the roster has the node, the join has no
+    // intent and no groups. Every reachable port is unknown, none is red.
+    const cold = computeExposure(row("n1", { coverage: "unbound", driftState: "in_sync" }), sockets, { groups: [], zones: [] }, undefined, false);
+    expect(cold.open.map((span) => `${formatSpans([span])}:${span.verdict}`)).toEqual(["22:unknown", "5432-5433:unknown"]);
+    expect(cold.unexplained).toBe(0);
+    expect(cold.rulesRead).toBe(false);
+    expect(cold.enforced).toBe(false);
+
+    // A failed refresh after a good read: the rules in hand are an earlier
+    // read's, and they judge nothing either.
+    const stale = computeExposure(managedNode, sockets, ctx, undefined, false);
+    expect(stale.open.every((span) => span.verdict === "unknown")).toBe(true);
+    expect(stale.confined).toEqual([]);
+    expect(stale.unexplained).toBe(0);
+    expect(findingsFor(managedNode, stale, ctx)).toEqual([]);
+
+    // The knock gate is read from the snapshot detail, not from intent, so it still confines.
+    const gated = computeExposure(row("n1", { coverage: "unbound", driftState: "unknown" }), sockets, { groups: [], zones: [] }, { ports: [22] }, false);
+    expect(gated.confined.map((span) => span.scopes)).toEqual([["the SSH knock gate"]]);
+    expect(gated.open.map((span) => span.verdict)).toEqual(["unknown"]);
+  });
 });
 
 // ── where a bind puts a socket: the legend-sg shapes ────────────────────────

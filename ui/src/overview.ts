@@ -8,6 +8,13 @@
  * not read: a node whose snapshot is stale, missing or still loading adds no
  * port to the picture and no finding to the attention list, and a number
  * whose read failed says "unknown" instead of the zero an empty join prints.
+ *
+ * Two reads feed it. Reality (the roster and each snapshot) says what is
+ * open and, through the server's drift_state, whether a live table matches
+ * what Lattice applied. The overview says what was declared. A port is
+ * "unexplained" only against declared rules, so after a failed overview read
+ * no port is counted as unexplained, while drift, computed by the server from
+ * the stored binding and the snapshot, stays known.
  */
 import { formatProcesses, formatSpan, type NodeExposure, type Verdict } from "./exposure";
 import type { PostureCounts, PostureRow } from "./posture";
@@ -73,13 +80,15 @@ function actionFor(rows: readonly PostureRow[], label: string): AttentionAction 
  */
 export function attentionItems(
   views: readonly ExposureRowView[],
-  options: { canSeeReality: boolean; realityFailed: boolean },
+  options: { canSeeReality: boolean; realityFailed: boolean; overviewFailed: boolean },
 ): AttentionItem[] {
   const items: AttentionItem[] = [];
   const readable = options.canSeeReality && !options.realityFailed;
 
   if (readable) {
-    const exposed = views.filter((view) => hasFreshEvidence(view) && view.exposure.unexplained > 0);
+    // Unexplained means no declared rule allows it; with the rules unread the
+    // claim cannot be made, whatever the exposure join was handed.
+    const exposed = options.overviewFailed ? [] : views.filter((view) => hasFreshEvidence(view) && view.exposure.unexplained > 0);
     if (exposed.length) {
       const ports = exposed.reduce((sum, view) => sum + view.exposure.unexplained, 0);
       const proof = exposed.slice(0, PROOF_NODES).map((view) => {
@@ -178,21 +187,26 @@ export function overviewNumbers(counts: PostureCounts, views: readonly ExposureR
   const fresh = views.filter(hasFreshEvidence);
   const ports = fresh.reduce((sum, view) => sum + view.exposure.unexplained, 0);
   const onNodes = fresh.filter((view) => view.exposure.unexplained > 0).length;
+  // Both reads are needed: the sockets from reality, the rules from the overview.
   const unexplained: OverviewNumber = realityMissing
     ? unknown("unexplained", "Unexplained ports", realityNote)
-    : {
-        key: "unexplained",
-        label: "Unexplained ports",
-        value: String(ports),
-        note: reading
-          ? `reading ${source.reading.done} of ${source.reading.total} snapshots`
-          : ports
-            ? `open with no rule, on ${plural(onNodes, "node", "nodes")}`
-            : `none on ${plural(fresh.length, "fresh snapshot", "fresh snapshots")}`,
-        tone: ports ? "error" : undefined,
-        unknown: false,
-      };
+    : source.overviewFailed
+      ? unknown("unexplained", "Unexplained ports", overviewNote)
+      : {
+          key: "unexplained",
+          label: "Unexplained ports",
+          value: String(ports),
+          note: reading
+            ? `reading ${source.reading.done} of ${source.reading.total} snapshots`
+            : ports
+              ? `open with no rule, on ${plural(onNodes, "node", "nodes")}`
+              : `none on ${plural(fresh.length, "fresh snapshot", "fresh snapshots")}`,
+          tone: ports ? "error" : undefined,
+          unknown: false,
+        };
 
+  // The server computes drift_state on the reality roster from the stored
+  // binding and the snapshot, so a failed overview read leaves it known.
   const drift: OverviewNumber = realityMissing
     ? unknown("drift", "Drift", realityNote)
     : {

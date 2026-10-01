@@ -41,6 +41,7 @@ function view(
     unexplained: open.filter((item) => item.verdict === "unexplained").reduce((sum, item) => sum + item.to - item.from + 1, 0),
     managedBy: { kind: "none" },
     enforced: row.coverage === "managed" && row.driftState === "in_sync",
+    rulesRead: true,
   };
   return { row, exposure, detail };
 }
@@ -57,7 +58,7 @@ const fleet: ExposureRowView[] = [
   view("sin-edge-01", {}, [span(9100, "unexplained", ["node_exporter"])], "pending"),
 ];
 
-const readable = { canSeeReality: true, realityFailed: false };
+const readable = { canSeeReality: true, realityFailed: false, overviewFailed: false };
 
 describe("the attention list", () => {
   it("names the unexplained ports with their owners, then drift, then a failed apply", () => {
@@ -88,9 +89,19 @@ describe("the attention list", () => {
   });
 
   it("says nothing about ports or drift when reality was not read, and still reports a failed apply", () => {
-    for (const options of [{ canSeeReality: false, realityFailed: false }, { canSeeReality: true, realityFailed: true }]) {
+    for (const options of [{ canSeeReality: false, realityFailed: false, overviewFailed: false }, { canSeeReality: true, realityFailed: true, overviewFailed: false }]) {
       expect(attentionItems(fleet, options).map((item) => item.key)).toEqual(["apply-failed"]);
     }
+  });
+
+  it("claims no unexplained port when the rules were not read, and keeps the server's drift", () => {
+    // A cold overview failure leaves the join with no groups: handed that
+    // join, the list must not turn every listener into "open with no rule".
+    // Drift comes from the reality roster, which the server computes from the
+    // stored binding and the snapshot, so it stays.
+    const items = attentionItems(fleet, { ...readable, overviewFailed: true });
+    expect(items.map((item) => item.key)).toEqual(["drift", "apply-failed"]);
+    expect(items.some((item) => /no rule/.test(item.claim))).toBe(false);
   });
 
   it("folds long proofs into a count", () => {
@@ -127,8 +138,11 @@ describe("the four numbers", () => {
   it("prints unknown, never a zero, for a number whose read failed", () => {
     const realityLost = overviewNumbers(counts, fleet, { ...source, realityFailed: true });
     expect(realityLost.map((number) => number.value)).toEqual([UNKNOWN_VALUE, UNKNOWN_VALUE, UNKNOWN_VALUE, "2"]);
+    // Unexplained needs the rules as much as the sockets; drift does not.
     const overviewLost = overviewNumbers(counts, fleet, { ...source, overviewFailed: true });
-    expect(overviewLost.map((number) => number.value)).toEqual([UNKNOWN_VALUE, "4", "2", UNKNOWN_VALUE]);
+    expect(overviewLost.map((number) => number.value)).toEqual([UNKNOWN_VALUE, UNKNOWN_VALUE, "2", UNKNOWN_VALUE]);
+    expect(overviewLost[1]!.note).toBe("the overview could not be loaded");
+    expect(overviewLost[1]!.tone).toBe("neutral");
     const noScope = overviewNumbers(counts, fleet, { ...source, canSeeReality: false });
     expect(noScope[2]!.note).toBe("reality not readable by this session");
   });

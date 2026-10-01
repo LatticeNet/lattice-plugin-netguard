@@ -11,6 +11,10 @@
  *
  * A port the node's knock table gates is confined, not open: it prints as a
  * "gated" chip under the open list rather than as a red unexplained mark.
+ *
+ * After a failed overview read no port is judged against the rules: each
+ * open one prints as unknown with that reason, and Managed by says the
+ * binding was not read rather than "none".
  */
 import { computed } from "vue";
 
@@ -93,13 +97,15 @@ function findingKey(nodeId: string, span: OpenSpan): string {
   return `${nodeId}:${span.protocol}:${span.from}-${span.to}`;
 }
 
-function spanTitle(span: OpenSpan): string {
+function spanTitle(span: OpenSpan, rulesRead: boolean): string {
   const owner = formatProcesses(span);
   const verdict =
     span.verdict === "allowed"
       ? "a rule allows it from the internet"
       : span.verdict === "unknown"
-        ? "the snapshot does not say which address it is bound to, so where it can be reached from is unknown"
+        ? rulesRead
+          ? "the snapshot does not say which address it is bound to, so where it can be reached from is unknown"
+          : "the declared rules were not read, so whether a rule allows it is unknown"
         : "no rule allows it";
   return `${formatSpan(span)}/${span.protocol}${owner ? ` (${owner})` : ""}: ${verdict}`;
 }
@@ -124,6 +130,7 @@ function exposureTitle(view: ExposureRowView): string {
 }
 
 function managedLabel(view: ExposureRowView): string {
+  if (!view.exposure.rulesRead) return "not read";
   const managed = view.exposure.managedBy;
   if (managed.kind === "legacy") return "legacy rules";
   if (managed.kind === "groups") return managed.names.join(", ");
@@ -133,6 +140,7 @@ function managedLabel(view: ExposureRowView): string {
 /** The one qualifier that turns the group list into the truth about enforcement. */
 function managedNote(view: ExposureRowView): string {
   const { row } = view;
+  if (!view.exposure.rulesRead) return row.lastError ? "apply failed" : "";
   if (row.coverage === "observe_only") return "observe only";
   if (row.coverage === "legacy") return "not adopted";
   if (row.coverage === "unbound") return "no binding";
@@ -230,16 +238,16 @@ function seenTitle(view: ExposureRowView): string {
                     v-if="span.verdict === 'unexplained'"
                     class="ng-span-open"
                     :data-ignored="ignored.has(findingKey(view.row.nodeId, span)) ? 'true' : undefined"
-                    :title="ignored.has(findingKey(view.row.nodeId, span)) ? `${spanTitle(span)}; ignored for this session` : spanTitle(span)"
+                    :title="ignored.has(findingKey(view.row.nodeId, span)) ? `${spanTitle(span, true)}; ignored for this session` : spanTitle(span, true)"
                   >
                     {{ formatSpan(span) }}<span aria-hidden="true"> (!)</span>
                     <span class="pc-sr-only">, open with no rule allowing it</span>
                   </span>
-                  <span v-else-if="span.verdict === 'unknown'" class="ng-span-unknown" :title="spanTitle(span)">
+                  <span v-else-if="span.verdict === 'unknown'" class="ng-span-unknown" :title="spanTitle(span, view.exposure.rulesRead)">
                     {{ formatSpan(span) }}<span aria-hidden="true"> (?)</span>
-                    <span class="pc-sr-only">, bind address not reported</span>
+                    <span class="pc-sr-only">{{ view.exposure.rulesRead ? ', bind address not reported' : ', not judged: the rules were not read' }}</span>
                   </span>
-                  <span v-else class="ng-span-allowed" :title="spanTitle(span)">{{ formatSpan(span) }}</span>
+                  <span v-else class="ng-span-allowed" :title="spanTitle(span, true)">{{ formatSpan(span) }}</span>
                 </template>
               </span>
               <span v-if="view.exposure.confined.length" class="ng-confined">
@@ -254,7 +262,7 @@ function seenTitle(view: ExposureRowView): string {
         </PcTd>
 
         <PcTd label="Managed by" :title="managedLabel(view)">
-          <span :class="view.exposure.managedBy.kind === 'none' ? 'ng-absent' : 'pc-mono'">{{ managedLabel(view) }}</span>
+          <span :class="view.exposure.managedBy.kind === 'none' || !view.exposure.rulesRead ? 'ng-absent' : 'pc-mono'">{{ managedLabel(view) }}</span>
           <small v-if="managedNote(view)" :class="view.row.lastError ? 'pc-danger-text' : undefined">{{ managedNote(view) }}</small>
         </PcTd>
 

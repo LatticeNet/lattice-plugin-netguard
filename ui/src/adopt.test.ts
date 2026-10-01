@@ -54,6 +54,7 @@ function view(over: Partial<PostureRow> = {}, detail: DetailState = "loaded"): E
     unexplained: 1,
     managedBy: { kind: "legacy", names: ["cd-homeserver baseline"] },
     enforced: false,
+    rulesRead: true,
   };
   return { row, exposure, detail };
 }
