@@ -4,8 +4,10 @@ import type { NodeExposure, OpenSpan } from "./exposure";
 import {
   UNKNOWN_VALUE,
   attentionItems,
+  matchesPortQuery,
   needsAttention,
   overviewNumbers,
+  parsePortQuery,
   portPicture,
   type DetailState,
   type ExposureRowView,
@@ -161,11 +163,45 @@ describe("the ports picture", () => {
     expect(picture.rows[0]!.nodes.map((node) => node.nodeName)).toEqual(["DMIT-2", "FRA-EXIT-02"]);
     expect(picture.rows[3]!.nodes[0]).toEqual({ nodeId: "build-1", nodeName: "BUILD-1", verdict: "unknown" });
     expect(picture.rows[0]!.processes).toEqual(["nginx"]);
-    expect(picture.rows[4]!.search).toBe("31001");
+    expect(picture.rows[4]!.search).toBe("port:31001-31012/tcp");
     expect({ counted: picture.counted, stale: picture.stale, neverReported: picture.neverReported, unread: picture.unread }).toEqual({ counted: 6, stale: 1, neverReported: 1, unread: 1 });
   });
 
   it("is empty for a fleet with nothing read", () => {
     expect(portPicture([]).rows).toEqual([]);
+  });
+
+  it("opens each row on a search that lists exactly the nodes the row counted", () => {
+    // Decoys a substring search for "22" picked up: a bank around 22, 2222,
+    // 8022, udp 22, a node named "...-22", and a stale node with 22 open.
+    const decoys = [
+      view("bank-node", {}, [span(21, "unexplained", ["inetd"], 23)]),
+      view("alt-ssh", {}, [span(2222, "allowed", ["sshd"]), span(8022, "unexplained", ["sshd"])]),
+      view("wg-hub", {}, [span(22, "allowed", ["wg"], 22, "udp")]),
+      view("relay-22", {}, [span(443, "allowed", ["nginx"])]),
+      view("old-22", { snapshotStatus: "stale" }, [span(22, "allowed", ["sshd"])]),
+    ];
+    const all = [...fleet, ...decoys];
+    const picture = portPicture(all);
+    for (const row of picture.rows) {
+      const query = parsePortQuery(row.search);
+      expect(query, row.search).toBeDefined();
+      const listed = all.filter((item) => matchesPortQuery(item, query!)).map((item) => item.row.nodeId).sort();
+      expect(listed, row.label).toEqual(row.nodes.map((node) => node.nodeId).sort());
+      expect(listed.length, row.label).toBe(row.total);
+    }
+    const ssh = picture.rows.find((row) => row.label === "22/tcp")!;
+    expect(ssh.search).toBe("port:22/tcp");
+    expect(ssh.total).toBe(6);
+    expect(picture.rows.find((row) => row.label === "22/udp")?.search).toBe("port:22/udp");
+  });
+
+  it("reads a port search, and nothing else, as one", () => {
+    expect(parsePortQuery("port:22/tcp")).toEqual({ from: 22, to: 22, protocol: "tcp" });
+    expect(parsePortQuery("port:31001-31012/tcp")).toEqual({ from: 31001, to: 31012, protocol: "tcp" });
+    expect(parsePortQuery("port:53")).toEqual({ from: 53, to: 53 });
+    for (const text of ["22", "port:", "port:0/tcp", "port:70000/tcp", "port:30-20/tcp", "port:22/sctp", "xport:22/tcp"]) {
+      expect(parsePortQuery(text), text).toBeUndefined();
+    }
   });
 });

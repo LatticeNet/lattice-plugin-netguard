@@ -4,7 +4,8 @@
  * one row per port or bank. The bar is the share of counted nodes that open
  * it, split by verdict: no rule (the finding), bind not reported (may be open),
  * and allowed by a rule. The numbers are printed beside the bar, so colour is
- * never the only carrier. A row opens Nodes searched for that port.
+ * never the only carrier. A row opens Nodes on its exact port search
+ * ("port:22/tcp"), which lists the nodes the row counted.
  */
 import { computed } from "vue";
 
@@ -56,7 +57,7 @@ function counts(row: PortRow): { text: string; attention?: boolean }[] {
 
 function rowTitle(row: PortRow): string {
   const names = row.nodes.map((node) => `${node.nodeName} (${node.verdict === "unexplained" ? "no rule" : node.verdict === "unknown" ? "bind not reported" : "allowed"})`);
-  return `${row.label}${row.processes.length ? ` ${row.processes.join(", ")}` : ""}: ${names.join(", ")}. Open Nodes searched for ${row.search}.`;
+  return `${row.label}${row.processes.length ? ` ${row.processes.join(", ")}` : ""}: ${names.join(", ")}. Opens Nodes on ${row.search}, which lists these ${plural(row.total, "node", "nodes")}.`;
 }
 </script>
 

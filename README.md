@@ -39,7 +39,10 @@ itself behind the same checks.
   unexplained ports, drift, observe only. Then one picture: every port the
   fleet has open to the internet, how many nodes open it and how many of those
   no rule explains, drawn only from fresh snapshots that were read; a port
-  opens Nodes searched for it.
+  opens Nodes on its exact search (`port:22/tcp`), which lists the nodes that
+  row counted. A failed overview read leaves ports unjudged: no port is
+  called unexplained, the picture is not drawn, and drift, which the server
+  computes, stays.
 - **Nodes:** one row per node answering what is open to the internet right
   now. The exposure column is computed from the node's reported listeners on
   non-loopback binds, minus what a bound group rule or trusted zone confines;

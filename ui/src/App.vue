@@ -92,8 +92,10 @@ import {
 } from "./netguardModel";
 import {
   attentionItems,
+  matchesPortQuery,
   needsAttention,
   overviewNumbers,
+  parsePortQuery,
   portPicture,
   type AttentionItem,
   type DetailState,
@@ -429,17 +431,22 @@ function onAttention(item: AttentionItem): void {
   }
   search.value = "";
   nodeFilter.value = "attention";
-  view.value = "nodes";
+  showNodes();
 }
 
+/** A picture row opens Nodes on its exact port search, which lists the nodes the row counted. */
 function showPort(port: string): void {
   search.value = port;
   nodeFilter.value = "all";
-  view.value = "nodes";
+  showNodes();
 }
 
+/* From a control low on the Overview, Nodes opens at its top, where the
+ * search and the match count say what the list holds; the document kept the
+ * Overview's scroll and landed mid-table. */
 function showNodes(): void {
   view.value = "nodes";
+  window.scrollTo({ top: 0 });
 }
 
 // ── Nodes ───────────────────────────────────────────────────────────────────
@@ -483,10 +490,15 @@ function matchesSearch(candidate: ExposureRowView, needle: string): boolean {
 
 const searching = computed(() => search.value.trim().length > 0);
 const needle = computed(() => search.value.trim().toLowerCase());
+/** "port:22/tcp" is one exact open port or bank, not text (overview.ts). */
+const portQuery = computed(() => parsePortQuery(needle.value));
 const attentionCount = computed(() => views.value.filter(needsAttention).length);
 const filteredViews = computed(() => (nodeFilter.value === "attention" ? views.value.filter(needsAttention) : views.value));
 const matchedViews = computed(() => {
-  const matched = needle.value ? filteredViews.value.filter((candidate) => matchesSearch(candidate, needle.value)) : filteredViews.value;
+  const query = portQuery.value;
+  const matched = !needle.value
+    ? filteredViews.value
+    : filteredViews.value.filter((candidate) => (query ? matchesPortQuery(candidate, query) : matchesSearch(candidate, needle.value)));
   return applyOrder(matched, order.value);
 });
 
@@ -1155,7 +1167,8 @@ function tabCount(value: number, failed: boolean): number | null {
       </PcEmptyState>
       <PcEmptyState v-else-if="!matchedViews.length" kind="no-match" title="No node matches that search">
         <template #icon><Radar :size="26" /></template>
-        <p>Nothing in {{ plural(filteredViews.length, 'node', 'nodes') }} matches <span class="pc-mono">{{ search.trim() }}</span>. The search covers node name and id, group and zone ids, group names, open ports and their owning process.</p>
+        <p v-if="portQuery">No node in {{ plural(filteredViews.length, 'node', 'nodes') }} has <span class="pc-mono">{{ search.trim() }}</span> open on a fresh snapshot that was read. A <span class="pc-mono">port:</span> search matches that exact port or bank, the way the Overview's picture counts it.</p>
+        <p v-else>Nothing in {{ plural(filteredViews.length, 'node', 'nodes') }} matches <span class="pc-mono">{{ search.trim() }}</span>. The search covers node name and id, group and zone ids, group names, open ports and their owning process; <span class="pc-mono">port:22/tcp</span> finds one exact port.</p>
         <template #actions><PcButton @click="search = ''">Clear the search</PcButton></template>
       </PcEmptyState>
 

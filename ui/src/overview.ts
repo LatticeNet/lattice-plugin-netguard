@@ -16,7 +16,7 @@
  * no port is counted as unexplained, while drift, computed by the server from
  * the stored binding and the snapshot, stays known.
  */
-import { formatProcesses, formatSpan, type NodeExposure, type Verdict } from "./exposure";
+import { formatProcesses, formatSpan, type NodeExposure, type Protocol, type Verdict } from "./exposure";
 import type { PostureCounts, PostureRow } from "./posture";
 
 /** Whether this node's full snapshot has been fetched yet. */
@@ -248,7 +248,7 @@ export interface PortRow {
   key: string;
   /** "5432/tcp", "31001-31012/tcp". */
   label: string;
-  /** The first port, which the Nodes search matches. */
+  /** The Nodes search that lists exactly this row's nodes: "port:5432/tcp". */
   search: string;
   processes: string[];
   unexplained: number;
@@ -268,6 +268,62 @@ export interface PortPicture {
   unread: number;
 }
 
+/** Whether a node's open ports go into the picture, and if not, why. */
+export type PictureEvidence = "counted" | "stale" | "never" | "unread";
+
+export function pictureEvidence(view: ExposureRowView): PictureEvidence {
+  if (view.row.snapshotStatus === "unknown") return "never";
+  if (view.exposure.evidence === "stale" || view.row.snapshotStatus === "stale") return "stale";
+  if (view.detail !== "loaded") return "unread";
+  return "counted";
+}
+
+// ── the port search: one picture row, as a Nodes search ─────────────────────
+
+/** An exact open port or bank: "port:22/tcp", "port:31001-31012/tcp". */
+export interface PortQuery {
+  from: number;
+  to: number;
+  /** Either protocol when the search names none. */
+  protocol?: Protocol;
+}
+
+const PORT_QUERY = /^port:(\d{1,5})(?:-(\d{1,5}))?(?:\/(tcp|udp))?$/;
+
+/** "22/tcp", "31001-31012/tcp", "36712/udp": the protocol always named, once. */
+export function portLabel(span: { from: number; to: number; protocol: Protocol }): string {
+  return `${span.from === span.to ? span.from : `${span.from}-${span.to}`}/${span.protocol}`;
+}
+
+/** The search a picture row opens Nodes with. It reads as what it means in the address: q=port:22/tcp. */
+export function portSearch(span: { from: number; to: number; protocol: Protocol }): string {
+  return `port:${portLabel(span)}`;
+}
+
+/** A port search, or undefined for any other text. Case and surrounding space are the caller's to fold. */
+export function parsePortQuery(text: string): PortQuery | undefined {
+  const match = PORT_QUERY.exec(text);
+  if (!match) return undefined;
+  const from = Number(match[1]);
+  const to = match[2] === undefined ? from : Number(match[2]);
+  if (from < 1 || to > 65535 || to < from) return undefined;
+  return { from, to, ...(match[3] ? { protocol: match[3] as Protocol } : {}) };
+}
+
+/**
+ * Whether a node opens exactly this port or bank on a snapshot the picture
+ * counts. Exact, not contained: the picture keeps "22/tcp" and "21-23/tcp" on
+ * separate rows, and a row's search has to list the nodes that row counted,
+ * no more and no fewer. A substring search for "22" also found 2222, 8022, a
+ * node named "...-22" and udp 22.
+ */
+export function matchesPortQuery(view: ExposureRowView, query: PortQuery): boolean {
+  if (pictureEvidence(view) !== "counted") return false;
+  return view.exposure.open.some(
+    (span) => span.from === query.from && span.to === query.to && (query.protocol === undefined || span.protocol === query.protocol),
+  );
+}
+
 /**
  * Every port the fleet has open to the internet, one row per port or bank,
  * with how many nodes open it and how many of those no rule explains. Ports
@@ -281,15 +337,16 @@ export function portPicture(views: readonly ExposureRowView[]): PortPicture {
   let neverReported = 0;
   let unread = 0;
   for (const view of views) {
-    if (view.row.snapshotStatus === "unknown") {
+    const evidence = pictureEvidence(view);
+    if (evidence === "never") {
       neverReported += 1;
       continue;
     }
-    if (view.exposure.evidence === "stale" || view.row.snapshotStatus === "stale") {
+    if (evidence === "stale") {
       stale += 1;
       continue;
     }
-    if (view.detail !== "loaded") {
+    if (evidence === "unread") {
       unread += 1;
       continue;
     }
@@ -298,7 +355,7 @@ export function portPicture(views: readonly ExposureRowView[]): PortPicture {
       const key = `${span.protocol}:${span.from}-${span.to}`;
       let row = rows.get(key);
       if (!row) {
-        row = { key, label: `${formatSpan(span)}/${span.protocol}`, search: String(span.from), processes: [], unexplained: 0, unknown: 0, allowed: 0, total: 0, nodes: [] };
+        row = { key, label: portLabel(span), search: portSearch(span), processes: [], unexplained: 0, unknown: 0, allowed: 0, total: 0, nodes: [] };
         rows.set(key, row);
       }
       for (const process of span.processes) if (!row.processes.includes(process)) row.processes.push(process);
