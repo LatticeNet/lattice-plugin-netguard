@@ -44,7 +44,8 @@ const description = computed(() => {
     props.picture.unread ? `${props.picture.unread} still reading` : "",
   ].filter(Boolean);
   const base = `From ${plural(props.picture.counted, "fresh snapshot", "fresh snapshots")}; a bar is the share of those nodes with the port open.`;
-  const judged = props.picture.rulesRead ? "" : " The declared rules were not read, so no port is judged allowed or no rule.";
+  // Zones come with the rules: unread, a socket bound to a zone address cannot be placed and is counted too.
+  const judged = props.picture.rulesRead ? "" : " The declared rules and zones were not read, so no port is judged, and a port bound to a zone address is counted as open.";
   return `${base}${judged}${left.length ? ` Not counted: ${left.join(", ")}.` : ""}`;
 });
 

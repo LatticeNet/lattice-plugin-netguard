@@ -105,7 +105,7 @@ describe("the port picture, rendered", () => {
     expect(html).toContain("22/tcp");
     expect(html).toContain("5432/tcp");
     expect(html.replace(/<!--[^>]*-->/g, "")).toContain("<span>2 nodes</span> · <span>not judged</span>");
-    expect(html).toContain("The declared rules were not read, so no port is judged allowed or no rule.");
+    expect(html).toContain("The declared rules and zones were not read, so no port is judged, and a port bound to a zone address is counted as open.");
     expect(html).toContain("cd-build-1 (not judged), cd-lab-1 (not judged). The declared rules were not read");
     expect(html).toContain("not judged, rules not read");
     expect(html).not.toContain("no rule</span>");
