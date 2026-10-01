@@ -95,9 +95,22 @@ describe("the port picture, rendered", () => {
   });
 
   it("says snapshots are still being read rather than that nothing is open", async () => {
-    const html = await render(PortPicture, { picture: { rows: [], counted: 0, stale: 0, neverReported: 0, unread: 2 }, reading: { done: 0, total: 2 } });
+    const html = await render(PortPicture, { picture: { rows: [], rulesRead: true, counted: 0, stale: 0, neverReported: 0, unread: 2 }, reading: { done: 0, total: 2 } });
     expect(html).toContain("Still reading snapshots");
     expect(html).not.toContain("Nothing is open to the internet");
+  });
+
+  it("still lists the ports it read after a failed overview read, each one not judged", async () => {
+    const html = await render(PortPicture, { picture: portPicture(views(false)), reading: { done: 2, total: 2 } });
+    expect(html).toContain("22/tcp");
+    expect(html).toContain("5432/tcp");
+    expect(html.replace(/<!--[^>]*-->/g, "")).toContain("<span>2 nodes</span> · <span>not judged</span>");
+    expect(html).toContain("The declared rules were not read, so no port is judged allowed or no rule.");
+    expect(html).toContain("cd-build-1 (not judged), cd-lab-1 (not judged). The declared rules were not read");
+    expect(html).toContain("not judged, rules not read");
+    expect(html).not.toContain("no rule</span>");
+    expect(html).not.toContain("bind not reported");
+    expect(html).not.toContain("data-attention");
   });
 });
 

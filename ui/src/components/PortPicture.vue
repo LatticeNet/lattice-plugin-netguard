@@ -6,6 +6,10 @@
  * and allowed by a rule. The numbers are printed beside the bar, so colour is
  * never the only carrier. A row opens Nodes on its exact port search
  * ("port:22/tcp"), which lists the nodes the row counted.
+ *
+ * After a failed overview read the sockets are still known and the rules are
+ * not: every port is drawn as open and not judged, with the reason in the
+ * description and the row title, and nothing is called allowed or no rule.
  */
 import { computed } from "vue";
 
@@ -40,7 +44,8 @@ const description = computed(() => {
     props.picture.unread ? `${props.picture.unread} still reading` : "",
   ].filter(Boolean);
   const base = `From ${plural(props.picture.counted, "fresh snapshot", "fresh snapshots")}; a bar is the share of those nodes with the port open.`;
-  return left.length ? `${base} Not counted: ${left.join(", ")}.` : base;
+  const judged = props.picture.rulesRead ? "" : " The declared rules were not read, so no port is judged allowed or no rule.";
+  return `${base}${judged}${left.length ? ` Not counted: ${left.join(", ")}.` : ""}`;
 });
 
 function share(count: number): string {
@@ -50,24 +55,36 @@ function share(count: number): string {
 /** The count's parts; only "no rule" is drawn in the attention colour, the node total stays plain. */
 function counts(row: PortRow): { text: string; attention?: boolean }[] {
   const parts: { text: string; attention?: boolean }[] = [{ text: plural(row.total, "node", "nodes") }];
+  // Rules not read: every node on the row is unknown for that one reason.
+  if (!props.picture.rulesRead) return [...parts, { text: "not judged" }];
   if (row.unexplained) parts.push({ text: `${row.unexplained} no rule`, attention: true });
   if (row.unknown) parts.push({ text: `${row.unknown} bind not reported` });
   return parts;
 }
 
+function verdictLabel(verdict: PortRow["nodes"][number]["verdict"]): string {
+  if (verdict === "unexplained") return "no rule";
+  if (verdict === "allowed") return "allowed";
+  return props.picture.rulesRead ? "bind not reported" : "not judged";
+}
+
 function rowTitle(row: PortRow): string {
-  const names = row.nodes.map((node) => `${node.nodeName} (${node.verdict === "unexplained" ? "no rule" : node.verdict === "unknown" ? "bind not reported" : "allowed"})`);
-  return `${row.label}${row.processes.length ? ` ${row.processes.join(", ")}` : ""}: ${names.join(", ")}. Opens Nodes on ${row.search}, which lists these ${plural(row.total, "node", "nodes")}.`;
+  const names = row.nodes.map((node) => `${node.nodeName} (${verdictLabel(node.verdict)})`);
+  const why = props.picture.rulesRead ? "" : " The declared rules were not read, so whether a rule allows it is unknown.";
+  return `${row.label}${row.processes.length ? ` ${row.processes.join(", ")}` : ""}: ${names.join(", ")}.${why} Opens Nodes on ${row.search}, which lists these ${plural(row.total, "node", "nodes")}.`;
 }
 </script>
 
 <template>
   <PcPanel label="Open to the internet, by port">
     <PcPanelHeader title="Open to the internet, by port" :description="description">
-      <div class="ng-legend" aria-hidden="true">
+      <div v-if="picture.rulesRead" class="ng-legend" aria-hidden="true">
         <span data-verdict="unexplained">no rule</span>
         <span data-verdict="unknown">bind not reported</span>
         <span data-verdict="allowed">allowed</span>
+      </div>
+      <div v-else class="ng-legend" aria-hidden="true">
+        <span data-verdict="unknown">not judged, rules not read</span>
       </div>
       <PcCount v-if="picture.rows.length" :value="plural(picture.rows.length, 'port', 'ports')" />
     </PcPanelHeader>

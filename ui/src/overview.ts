@@ -14,7 +14,9 @@
  * what Lattice applied. The overview says what was declared. A port is
  * "unexplained" only against declared rules, so after a failed overview read
  * no port is counted as unexplained, while drift, computed by the server from
- * the stored binding and the snapshot, stays known.
+ * the stored binding and the snapshot, stays known. The picture is still
+ * drawn then, because the sockets were read: each port is listed as open and
+ * not judged, never as allowed or with no rule.
  */
 import { formatProcesses, formatSpan, type NodeExposure, type Protocol, type Verdict } from "./exposure";
 import type { PostureCounts, PostureRow } from "./posture";
@@ -290,6 +292,12 @@ export interface PortRow {
 
 export interface PortPicture {
   rows: PortRow[];
+  /**
+   * Whether the declared rules were read. False after a failed overview read:
+   * every row's nodes are "unknown" because no port was judged against a
+   * rule, not because a bind address is missing.
+   */
+  rulesRead: boolean;
   /** Nodes whose open ports went into the picture. */
   counted: number;
   /** Nodes left out, and why. */
@@ -401,7 +409,8 @@ export function portPicture(views: readonly ExposureRowView[]): PortPicture {
     return a.key.localeCompare(b.key, undefined, { numeric: true });
   });
   for (const row of sorted) row.nodes.sort((a, b) => verdictRank(a.verdict) - verdictRank(b.verdict) || a.nodeName.localeCompare(b.nodeName));
-  return { rows: sorted, counted, stale, neverReported, unread };
+  const rulesRead = views.every((view) => view.exposure.rulesRead);
+  return { rows: sorted, rulesRead, counted, stale, neverReported, unread };
 }
 
 function verdictRank(verdict: Verdict): number {

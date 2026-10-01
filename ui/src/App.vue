@@ -1157,7 +1157,7 @@ function tabCount(value: number, failed: boolean): number | null {
         <PcStatStrip :count="4" label="NetGuard numbers" class="ng-numbers">
           <PcStatCard v-for="number in numbers" :key="number.key" :label="number.label" :value="number.value" :tone="number.tone" :note="number.note" :data-unknown="number.unknown ? 'true' : undefined" />
         </PcStatStrip>
-        <PortPicture v-if="canSeeReality && !realityFailed && !overviewFailed" :picture="picture" :reading="detailProgress" @port="showPort" @nodes="showNodes" />
+        <PortPicture v-if="canSeeReality && !realityFailed" :picture="picture" :reading="detailProgress" @port="showPort" @nodes="showNodes" />
       </template>
     </section>
 

@@ -192,6 +192,12 @@ describe("the ports picture", () => {
     expect(portPicture([]).rows).toEqual([]);
   });
 
+  it("says whether the rules behind its verdicts were read", () => {
+    expect(portPicture(fleet).rulesRead).toBe(true);
+    const unread = fleet.map((item) => ({ ...item, exposure: { ...item.exposure, rulesRead: false } }));
+    expect(portPicture(unread).rulesRead).toBe(false);
+  });
+
   it("opens each row on a search that lists exactly the nodes the row counted", () => {
     // Decoys a substring search for "22" picked up: a bank around 22, 2222,
     // 8022, udp 22, a node named "...-22", and a stale node with 22 open.
