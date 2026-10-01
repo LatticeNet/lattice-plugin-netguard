@@ -71,8 +71,10 @@ itself behind the same checks.
 
 A node that has never reported is never rendered as healthy, and an empty
 listener list is never rendered as "nothing open" unless a fresh snapshot says
-so. The page holds no timer: every age is measured from the fetch the proof
-line names, and Refresh observes again.
+so. The page reads when it opens and when Refresh is pressed, never on a
+timer. One clock re-renders the relative ages ("observed 41s ago", the Seen
+column) every 5 seconds while the page is visible and stops while it is
+hidden; it reads nothing.
 
 The exposure classification mirrors `lattice-server/internal/netguard/suggest.go`
 with two stated differences: a private CIDR remote scopes a rule rather than
