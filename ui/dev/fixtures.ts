@@ -141,7 +141,11 @@ const SPECS: Spec[] = [
   { id: "cd-build-2", name: "[cd]-build-2", shape: "observe", groups: ["ssh", "mgmt-office"], zones: ["tailscale"], listeners: [listen(22, "sshd"), listen(8443, "lattice-console"), listen(9100, "node_exporter", "100.64.0.12")], ageSeconds: 52 },
   { id: "cd-lab-1", name: "[cd]-lab-1", shape: "observe", groups: [], zones: [], listeners: [listen(22, "sshd"), listen(3000, "grafana")], ageSeconds: 12 },
   { id: "cd-lab-2", name: "[cd]-lab-2", shape: "observe-stale", groups: ["ssh"], zones: ["wireguard"], listeners: [listen(22, "sshd"), listen(6443, "kube-apiserver")], ageSeconds: 3 * 86400 + 1200 },
-  { id: "cd-homeserver", name: "[cd]-homeserver", shape: "legacy", groups: [], zones: [], listeners: [listen(22, "sshd"), listen(80, "nginx"), listen(443, "nginx"), listen(5432, "postgres"), listen(5432, "postgres", "::"), listen(631, "cupsd", "127.0.0.1")], ageSeconds: 12 },
+  // Adopting this baseline closes 5432, and cuts two paths the table it
+  // builds does not keep: the alternate sshd on 3434, which only the knock
+  // table lets in and no baseline rule accepts, and node_exporter on the
+  // tailscale address, a zone the binding does not trust.
+  { id: "cd-homeserver", name: "[cd]-homeserver", shape: "legacy", groups: [], zones: [], listeners: [listen(22, "sshd"), listen(3434, "sshd"), listen(80, "nginx"), listen(443, "nginx"), listen(5432, "postgres"), listen(5432, "postgres", "::"), listen(9100, "node_exporter", "100.64.0.14"), listen(631, "cupsd", "127.0.0.1")], foreign: ["inet lattice_knock"], knock: [22, 3434], ageSeconds: 12 },
   { id: "cd-nas", name: "[cd]-nas", shape: "legacy-stale", groups: [], zones: [], listeners: [listen(22, "sshd"), listen(445, "smbd")], ageSeconds: 5 * 86400 },
   { id: "cd-mac-air", name: "[cd]-mac-air", shape: "unbound", groups: [], zones: [], listeners: [listen(5000, "ControlCenter"), listen(7000, "ControlCenter"), listen(22, "sshd")], knock: [22], ageSeconds: 118 },
   { id: "cd-pi-zero", name: "[cd]-pi-zero", shape: "never", groups: [], zones: [], listeners: [], ageSeconds: 0 },
@@ -167,6 +171,7 @@ function interfacesFor(spec: Spec, index: number): GuardInterface[] {
   ];
   if (spec.zones.includes("wireguard") || spec.shape === "managed" || spec.shape === "drift") out.push({ name: "wg0", addresses: [`10.7.0.${(index % 200) + 2}/24`], up: true });
   if (spec.zones.includes("tailscale") || spec.id === "cd-build-2") out.push({ name: "tailscale0", addresses: [`100.64.0.${(index % 200) + 2}/32`], up: true });
+  else if (spec.listeners.some((listener) => listener.address?.startsWith("100.64."))) out.push({ name: "tailscale0", addresses: ["100.64.0.14/32"], up: true });
   if (spec.foreign?.length) out.push({ name: "docker0", addresses: ["172.17.0.1/16"], up: false });
   return out;
 }

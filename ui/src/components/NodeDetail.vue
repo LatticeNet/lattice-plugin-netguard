@@ -1,10 +1,12 @@
 <script setup lang="ts">
 /**
- * One node, intent beside evidence, folded under its row.
+ * One node, intent beside evidence, in the node's side panel.
  *
- * The action row comes first because it is what the operator opened the row
- * for: edit the binding, review and apply, or adopt a legacy baseline. Then
- * the node's own unexplained ports, the lint findings, the three facts cards,
+ * The action row comes first because it is what the operator opened the node
+ * for: edit the binding, review and apply, or adopt a legacy baseline (which
+ * asks first, with a preview of what the next apply installs). Then the
+ * node's own unexplained ports with a suggestion each, the lint findings, the
+ * three facts cards,
  * the listeners, the interfaces and the generated ruleset. The block refuses
  * to imply agreement it cannot prove: when a node has never reported, the
  * evidence side says so plainly instead of rendering empty tables that read
@@ -22,6 +24,7 @@ import {
   driftUnknownReason,
   snapshotLabel,
   snapshotToneFor,
+  uncompiledNote,
   type PostureRow,
 } from "../posture";
 import {
@@ -41,6 +44,7 @@ const props = defineProps<{
   row: PostureRow;
   review?: Review;
   loading: boolean;
+  /** The review request failed; a compile error is read from `review`. */
   reviewError: string;
   /** This node's open ports that no rule explains, ignored ones included. */
   findings: readonly Finding[];
@@ -49,6 +53,12 @@ const props = defineProps<{
   zones: readonly GuardZone[];
   canAdmin: boolean;
   canPlan: boolean;
+  /**
+   * Whether the overview read returned this node's binding. Without it the
+   * coverage below is empty or an earlier read's, so the panel offers no
+   * action and states nothing that coverage alone decides.
+   */
+  rulesRead: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -61,6 +71,7 @@ const emit = defineEmits<{
 }>();
 
 const reality = computed(() => props.review?.reality?.reality ?? undefined);
+const uncompiled = computed(() => uncompiledNote(props.row.coverage));
 const suggestions = computed(() => props.review?.suggestions ?? []);
 const portIndex = computed(() => suggestionsByPort(suggestions.value));
 
@@ -129,9 +140,10 @@ function lintTone(severity: string): "error" | "warning" {
 <template>
   <div class="ng-detail">
     <div class="ng-detail-actions">
-      <span v-if="!canAdmin && !canPlan" class="ng-detail-note">read-only: this session can view this node and change nothing</span>
-      <template v-if="hasActions">
-        <PcButton v-if="row.coverage === 'legacy' && canAdmin" @click="emit('adopt')">Adopt baseline</PcButton>
+      <span v-if="!rulesRead" class="ng-detail-note">no actions: the overview read failed, so this node's binding is not known; Refresh reads it again</span>
+      <span v-else-if="!canAdmin && !canPlan" class="ng-detail-note">read-only: this session can view this node and change nothing</span>
+      <template v-if="rulesRead && hasActions">
+        <PcButton v-if="row.coverage === 'legacy' && canAdmin" @click="emit('adopt')">Adopt baseline…</PcButton>
         <PcButton v-if="canAdmin && row.coverage !== 'legacy' && row.intent" @click="emit('edit-binding')">
           <template #icon><Pencil :size="14" /></template>Edit binding
         </PcButton>
@@ -144,22 +156,32 @@ function lintTone(severity: string): "error" | "warning" {
     <PcSkeleton v-if="loading" :count="3" :label="`Loading ${row.nodeName}`" />
 
     <template v-else>
-      <PcNotice v-if="reviewError" tone="warning" title="Intent could not be compiled for this node">
+      <PcNotice v-if="reviewError" tone="warning" title="This node's review could not be read">
         <p>{{ endSentence(reviewError) }} The reported evidence below is still accurate.</p>
+      </PcNotice>
+      <!-- A node NetGuard does not manage has no table to compile: that is
+           its state, said as such, not a warning. -->
+      <p v-else-if="review?.compile_error && uncompiled && rulesRead" class="ng-uncompiled">
+        <strong>{{ uncompiled.title }}.</strong> {{ uncompiled.body }}
+      </p>
+      <PcNotice v-else-if="review?.compile_error" tone="warning" title="Intent could not be compiled for this node">
+        <p>{{ endSentence(review.compile_error) }} The reported evidence below is still accurate.</p>
       </PcNotice>
 
       <section v-if="findings.length" class="ng-attn" aria-label="Open ports nothing explains on this node">
         <div v-for="finding in findings" :key="finding.key" class="ng-attn-row" :data-ignored="ignored.has(finding.key) ? 'true' : undefined">
-          <PcStateDot :tone="ignored.has(finding.key) ? 'neutral' : 'error'" :label="ignored.has(finding.key) ? 'ignored' : 'open'" />
+          <PcStateDot :tone="ignored.has(finding.key) ? 'neutral' : 'error'" :label="ignored.has(finding.key) ? 'ignored' : 'no rule'" />
           <div class="ng-attn-claim">
             <span>{{ finding.sentence }}</span>
             <small class="pc-mono">{{ formatProcesses(finding.span) || 'owner unknown' }} · {{ finding.span.protocol }}</small>
+            <small v-if="ignored.has(finding.key)">Ignored until this page reloads. Nothing is saved and the port still counts as open.</small>
+            <small v-else class="ng-attn-hint">{{ finding.hint }}</small>
           </div>
           <div class="ng-attn-actions">
             <PcButton v-if="ignored.has(finding.key)" compact @click="emit('restore', finding.key)">Undo</PcButton>
             <template v-else>
               <PcButton v-if="canAdmin" compact @click="emit('add', finding)">Add to group</PcButton>
-              <PcButton compact @click="emit('ignore', finding.key)">Ignore</PcButton>
+              <PcButton compact title="Hide this finding until the page reloads. Nothing is saved." @click="emit('ignore', finding.key)">Ignore for this session</PcButton>
             </template>
           </div>
         </div>
@@ -211,9 +233,11 @@ function lintTone(severity: string): "error" | "warning" {
           <h3>Authority</h3>
           <dl class="ng-kv">
             <dt>Security groups</dt>
-            <dd>{{ row.groupIds.length ? row.groupIds.join(', ') : 'none attached' }}</dd>
+            <dd v-if="!rulesRead" class="ng-subtle">not read</dd>
+            <dd v-else>{{ row.groupIds.length ? row.groupIds.join(', ') : 'none attached' }}</dd>
             <dt>Trusted zones</dt>
-            <dd>{{ row.zoneIds.length ? row.zoneIds.join(', ') : 'none' }}</dd>
+            <dd v-if="!rulesRead" class="ng-subtle">not read</dd>
+            <dd v-else>{{ row.zoneIds.length ? row.zoneIds.join(', ') : 'none' }}</dd>
             <dt>Last apply</dt>
             <dd v-if="row.lastError" class="pc-danger-text">{{ row.lastError }}</dd>
             <dd v-else-if="row.lastAppliedAt" class="pc-mono">{{ stampUtc(row.lastAppliedAt) }}</dd>
