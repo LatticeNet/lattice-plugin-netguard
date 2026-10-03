@@ -25,12 +25,13 @@ state), so a reload or a pasted link lands on the same place; old `?lens=` and
 The page renders on the shared plugin chassis, `@latticenet/plugin-bridge/chassis`:
 the same header, tabs, table card, chips and overlays as the other plugin
 frames, on the token contract the console publishes. `ui/src/styles.css` adds
-only what NetGuard alone needs. Until the chassis ships from the package
-registry, `ui/package.json` points at the chassis branch build packed into
-`ui/vendor/latticenet-plugin-bridge-0.1.0-alpha.2.tgz`; swap it back to the
-registry version once `0.1.0-alpha.2` is published. That client drops
-`pageState` from init, so `ui/src/pageState.ts` reads it from the init message
-itself behind the same checks.
+only what NetGuard alone needs. `ui/package.json` pins
+`@latticenet/plugin-bridge` `0.2.0-alpha.1` from the package registry (GitHub
+Packages, `ui/.npmrc`), the first release whose client passes `pageState` and
+sends the page state back, and whose chassis carries the layer row, the
+non-modal side panel and the table fixes this page used to patch. That version
+resolves once the bridge release is published; until then `npm ci` cannot
+install it.
 
 - **Overview** (the default): what needs a hand first (ports open to the
   internet that no rule explains, named with their owners; nodes whose live

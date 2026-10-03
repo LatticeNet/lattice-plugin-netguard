@@ -18,7 +18,7 @@
  * panel that renders an unreported node as a healthy one is worse than no
  * panel at all.
  */
-import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { Boxes, Plus, Radar, RefreshCw, Shield, ShieldCheck } from "@lucide/vue";
 
 import { BridgeClient, canCall, type HostInit } from "@latticenet/plugin-bridge";
@@ -103,12 +103,8 @@ import {
   type ExposureRowView,
 } from "./overview";
 import {
-  channelFromHash,
   createStateSender,
   documentPageState,
-  listenForInitPageState,
-  stateMessage,
-  validPageState,
   writeDocumentState,
   type PageState,
   type StateSender,
@@ -116,7 +112,6 @@ import {
 import { coverageLabel, countPosture, joinPosture, type PostureRow } from "./posture";
 import type { MenuItem } from "./rowMenu";
 import { useNow } from "./clock";
-import { revealSelectedTab } from "./layerTabs";
 import { ageLabel, clockUtc, stampUtc } from "./time";
 import {
   PANEL_TITLE,
@@ -188,34 +183,18 @@ const pageState = computed<PageState>(() =>
   encodeNgState({ view: view.value, open: openId.value, q: search.value, show: nodeFilter.value, groups: [...groupsOpen.value] }),
 );
 
-const channel = channelFromHash(window.location.hash);
-/** The state the host's init carried: undefined from a host that keeps none. */
-let hostState: PageState | undefined;
 let hostKeepsState = false;
 let stateSender: StateSender | undefined;
-/* Registered before the bridge client, so it hears init first (pageState.ts). */
-let stopInitListener: (() => void) | undefined = channel
-  ? listenForInitPageState(window, channel, (state) => {
-      hostState = state;
-    })
-  : undefined;
 
 /* The state goes out only after init, and only once the operator changes
  * something: the page's reading of the address (defaults filled in, unknown
- * values dropped) is not a reason to rewrite a pasted link. */
-function adoptPageState(): void {
+ * values dropped) is not a reason to rewrite a pasted link. `hostState` is
+ * undefined from a host that keeps no page state. */
+function adoptPageState(hostState: PageState | undefined): void {
   hostKeepsState = hostState !== undefined;
   if (hostState) applyState(decodeNgState(hostState));
-  stopInitListener?.();
-  stopInitListener = undefined;
   stateSender?.dispose();
-  stateSender = createStateSender(sendState, { baseline: pageState.value });
-}
-
-function sendState(state: PageState): void {
-  const valid = validPageState(state);
-  if (!bridge || !channel || !valid) return;
-  window.parent.postMessage(stateMessage(bridge.nonce, valid), channel.hostOrigin);
+  stateSender = createStateSender((state) => bridge?.sendState(state), { baseline: pageState.value });
 }
 
 function publishPageState(state: PageState): void {
@@ -239,15 +218,11 @@ try {
   });
   bridge.init
     .then(async (value) => {
-      adoptPageState();
+      adoptPageState(value.pageState);
       init.value = value;
       await refresh();
     })
     .catch((cause) => {
-      // A handshake that never completes leaves the raw init listener
-      // registered for the life of the page; nothing will ever arrive for it.
-      stopInitListener?.();
-      stopInitListener = undefined;
       bootError.value = safeErrorMessage(
         cause,
         "The Lattice console did not hand this page a session, so NetGuard has nothing to show.",
@@ -255,7 +230,6 @@ try {
       loading.value = false;
     });
 } catch (cause) {
-  stopInitListener?.();
   bootError.value = safeErrorMessage(
     cause,
     "The Lattice console did not hand this page a session, so NetGuard has nothing to show.",
@@ -610,12 +584,6 @@ function closeNode(): void {
   panelNotice.value = "";
 }
 
-/* The segmented layer row scrolls sideways in a narrow frame; keep the
- * selected layer in it, again once the read lands, since the tab counts it
- * adds widen the row. */
-onMounted(() => revealSelectedTab(document.querySelector(".ng-layer-tabs")));
-watch([view, loading], () => revealSelectedTab(document.querySelector(".ng-layer-tabs")), { flush: "post" });
-
 watch(openId, (nodeId) => {
   // The first load reads the review itself; this covers every later open.
   if (nodeId && init.value && !loading.value) void loadReviewFor(nodeId);
@@ -964,7 +932,6 @@ async function confirmApply(acceptLockoutRisk: boolean): Promise<void> {
 // firewall, that is how the wrong node gets clicked. Refresh is a button.
 
 onBeforeUnmount(() => {
-  stopInitListener?.();
   stateSender?.dispose();
   bridge?.dispose();
 });
@@ -1090,17 +1057,14 @@ function tabCount(value: number, failed: boolean): number | null {
     </PcNotice>
 
     <!-- The layers: an underline row of their own, above the layer's own
-         toolbar (design review of wave 1, "Tab decision"). -->
-    <PcToolbar class="ng-layer-bar" label="NetGuard layers">
-      <template #tabs>
-        <PcLensTabs v-model="view" class="ng-layer-tabs" label="NetGuard layers">
-          <PcLensTab value="overview" label="Overview" />
-          <PcLensTab value="nodes" label="Nodes" :count="tabCount(counts.total, realityFailed)" />
-          <PcLensTab value="groups" label="Groups" :count="tabCount(overview.groups.length, overviewFailed)" />
-          <PcLensTab value="zones" label="Zones" :count="tabCount(overview.zones.length, overviewFailed)" />
-        </PcLensTabs>
-      </template>
-    </PcToolbar>
+         toolbar (design review of wave 1, "Tab decision"). The row keeps the
+         selected layer in view itself, again when the counts land. -->
+    <PcLensTabs v-model="view" variant="layer" label="NetGuard layers">
+      <PcLensTab value="overview" label="Overview" />
+      <PcLensTab value="nodes" label="Nodes" :count="tabCount(counts.total, realityFailed)" />
+      <PcLensTab value="groups" label="Groups" :count="tabCount(overview.groups.length, overviewFailed)" />
+      <PcLensTab value="zones" label="Zones" :count="tabCount(overview.zones.length, overviewFailed)" />
+    </PcLensTabs>
 
     <PcToolbar v-if="showToolbar" label="NetGuard toolbar" :data-view="view">
       <template #search>
