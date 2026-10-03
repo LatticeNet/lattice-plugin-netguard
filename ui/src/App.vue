@@ -103,12 +103,8 @@ import {
   type ExposureRowView,
 } from "./overview";
 import {
-  channelFromHash,
   createStateSender,
   documentPageState,
-  listenForInitPageState,
-  stateMessage,
-  validPageState,
   writeDocumentState,
   type PageState,
   type StateSender,
@@ -188,34 +184,18 @@ const pageState = computed<PageState>(() =>
   encodeNgState({ view: view.value, open: openId.value, q: search.value, show: nodeFilter.value, groups: [...groupsOpen.value] }),
 );
 
-const channel = channelFromHash(window.location.hash);
-/** The state the host's init carried: undefined from a host that keeps none. */
-let hostState: PageState | undefined;
 let hostKeepsState = false;
 let stateSender: StateSender | undefined;
-/* Registered before the bridge client, so it hears init first (pageState.ts). */
-let stopInitListener: (() => void) | undefined = channel
-  ? listenForInitPageState(window, channel, (state) => {
-      hostState = state;
-    })
-  : undefined;
 
 /* The state goes out only after init, and only once the operator changes
  * something: the page's reading of the address (defaults filled in, unknown
- * values dropped) is not a reason to rewrite a pasted link. */
-function adoptPageState(): void {
+ * values dropped) is not a reason to rewrite a pasted link. `hostState` is
+ * undefined from a host that keeps no page state. */
+function adoptPageState(hostState: PageState | undefined): void {
   hostKeepsState = hostState !== undefined;
   if (hostState) applyState(decodeNgState(hostState));
-  stopInitListener?.();
-  stopInitListener = undefined;
   stateSender?.dispose();
-  stateSender = createStateSender(sendState, { baseline: pageState.value });
-}
-
-function sendState(state: PageState): void {
-  const valid = validPageState(state);
-  if (!bridge || !channel || !valid) return;
-  window.parent.postMessage(stateMessage(bridge.nonce, valid), channel.hostOrigin);
+  stateSender = createStateSender((state) => bridge?.sendState(state), { baseline: pageState.value });
 }
 
 function publishPageState(state: PageState): void {
@@ -239,15 +219,11 @@ try {
   });
   bridge.init
     .then(async (value) => {
-      adoptPageState();
+      adoptPageState(value.pageState);
       init.value = value;
       await refresh();
     })
     .catch((cause) => {
-      // A handshake that never completes leaves the raw init listener
-      // registered for the life of the page; nothing will ever arrive for it.
-      stopInitListener?.();
-      stopInitListener = undefined;
       bootError.value = safeErrorMessage(
         cause,
         "The Lattice console did not hand this page a session, so NetGuard has nothing to show.",
@@ -255,7 +231,6 @@ try {
       loading.value = false;
     });
 } catch (cause) {
-  stopInitListener?.();
   bootError.value = safeErrorMessage(
     cause,
     "The Lattice console did not hand this page a session, so NetGuard has nothing to show.",
@@ -964,7 +939,6 @@ async function confirmApply(acceptLockoutRisk: boolean): Promise<void> {
 // firewall, that is how the wrong node gets clicked. Refresh is a button.
 
 onBeforeUnmount(() => {
-  stopInitListener?.();
   stateSender?.dispose();
   bridge?.dispose();
 });
