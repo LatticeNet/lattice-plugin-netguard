@@ -18,7 +18,7 @@
  * panel that renders an unreported node as a healthy one is worse than no
  * panel at all.
  */
-import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { Boxes, Plus, Radar, RefreshCw, Shield, ShieldCheck } from "@lucide/vue";
 
 import { BridgeClient, canCall, type HostInit } from "@latticenet/plugin-bridge";
@@ -112,7 +112,6 @@ import {
 import { coverageLabel, countPosture, joinPosture, type PostureRow } from "./posture";
 import type { MenuItem } from "./rowMenu";
 import { useNow } from "./clock";
-import { revealSelectedTab } from "./layerTabs";
 import { ageLabel, clockUtc, stampUtc } from "./time";
 import {
   PANEL_TITLE,
@@ -584,12 +583,6 @@ function closeNode(): void {
   openId.value = "";
   panelNotice.value = "";
 }
-
-/* The segmented layer row scrolls sideways in a narrow frame; keep the
- * selected layer in it, again once the read lands, since the tab counts it
- * adds widen the row. */
-onMounted(() => revealSelectedTab(document.querySelector(".ng-layer-tabs")));
-watch([view, loading], () => revealSelectedTab(document.querySelector(".ng-layer-tabs")), { flush: "post" });
 
 watch(openId, (nodeId) => {
   // The first load reads the review itself; this covers every later open.
@@ -1064,17 +1057,14 @@ function tabCount(value: number, failed: boolean): number | null {
     </PcNotice>
 
     <!-- The layers: an underline row of their own, above the layer's own
-         toolbar (design review of wave 1, "Tab decision"). -->
-    <PcToolbar class="ng-layer-bar" label="NetGuard layers">
-      <template #tabs>
-        <PcLensTabs v-model="view" class="ng-layer-tabs" label="NetGuard layers">
-          <PcLensTab value="overview" label="Overview" />
-          <PcLensTab value="nodes" label="Nodes" :count="tabCount(counts.total, realityFailed)" />
-          <PcLensTab value="groups" label="Groups" :count="tabCount(overview.groups.length, overviewFailed)" />
-          <PcLensTab value="zones" label="Zones" :count="tabCount(overview.zones.length, overviewFailed)" />
-        </PcLensTabs>
-      </template>
-    </PcToolbar>
+         toolbar (design review of wave 1, "Tab decision"). The row keeps the
+         selected layer in view itself, again when the counts land. -->
+    <PcLensTabs v-model="view" variant="layer" label="NetGuard layers">
+      <PcLensTab value="overview" label="Overview" />
+      <PcLensTab value="nodes" label="Nodes" :count="tabCount(counts.total, realityFailed)" />
+      <PcLensTab value="groups" label="Groups" :count="tabCount(overview.groups.length, overviewFailed)" />
+      <PcLensTab value="zones" label="Zones" :count="tabCount(overview.zones.length, overviewFailed)" />
+    </PcLensTabs>
 
     <PcToolbar v-if="showToolbar" label="NetGuard toolbar" :data-view="view">
       <template #search>
