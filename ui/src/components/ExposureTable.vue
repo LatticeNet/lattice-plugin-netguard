@@ -15,10 +15,12 @@
  * The row has one click target, the node's panel, and one menu for the
  * actions that do not need the panel open. Nothing is invented for a node
  * that has not reported: its port cell says "unknown", never "nothing open".
- * Below 720px the node column pins to the left edge with the status beside
- * it, so the verdict is on screen before any sideways scroll; below 480px
- * the row folds into lines (node and menu, then the verdict, then the ports)
- * so a phone shows every node's verdict and ports without scrolling sideways.
+ * From 480 to 720px the node column pins to the left edge and the verdict
+ * moves into it, on a second line under the name (the chassis's narrow
+ * status line), so it stays on screen while the rest of the row scrolls
+ * sideways; the Status column steps aside there. Below 480px the row folds
+ * into lines (node and menu, then the verdict, then the ports, wrapped) so a
+ * phone shows every node's verdict and every port without scrolling sideways.
  *
  * After a failed overview read no port is judged against the rules: each
  * open one prints as unknown with that reason, and Managed by says the
@@ -179,6 +181,7 @@ function seenTitle(view: ExposureRowView): string {
             >{{ view.row.nodeName }}</button>
           </div>
           <small v-if="showId" :title="view.row.nodeId">{{ view.row.nodeId }}</small>
+          <span class="pc-narrow-status"><PcStateDot :tone="status.tone" :label="status.label" :title="status.title" /></span>
         </td>
 
         <PcTd label="Status" stack="state" class="ng-status-cell">

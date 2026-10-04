@@ -65,9 +65,9 @@ install it.
   and Edit binding; a disabled item says why under its label. A segmented
   filter, All or Needs attention, each with its count, keeps only the nodes
   that need attention; its counts appear only when the reads behind them
-  landed. From 480 to 720 the node column is pinned with the status beside
-  it; below 480 each row folds into the node and its menu, then the verdict,
-  then the ports.
+  landed. From 480 to 720 the node column is pinned and carries the verdict
+  on a line under the name; below 480 each row folds into the node and its
+  menu, then the verdict, then every port, wrapped.
 - **Adopt baseline** asks first, and shows what the next apply installs: the
   baseline's rules, the trusted zones, and the ports open now that the apply
   would close. Adopting writes nothing to the node.

@@ -78,7 +78,10 @@ describe("the Nodes table, rendered", () => {
 
   it("puts each row's verdict before its ports, and the ports no rule allows first", async () => {
     const html = (await render(ExposureTable, tableProps(views(true)))).replace(/<!--[^>]*-->/g, "");
-    expect(html.match(/2 ports, no rule/g)).toHaveLength(2);
+    // Twice per row: the Status cell, and the narrow status line under the
+    // name that takes its place between 480 and 720px (CSS shows one).
+    expect(html.match(/2 ports, no rule/g)).toHaveLength(4);
+    expect(html.match(/class="pc-narrow-status"/g)).toHaveLength(2);
     // Both rows need attention, and both carry the marker.
     expect(html.match(/data-attention="true"/g)).toHaveLength(2);
     expect(html.indexOf("2 ports, no rule")).toBeLessThan(html.indexOf('class="ng-span-open"'));

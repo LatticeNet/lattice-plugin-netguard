@@ -248,6 +248,15 @@ ul {
   color: var(--muted-foreground);
 }
 
+/* A count in the toolbar is a console count, not a notification badge: the
+   console's Approvals counts are ink on a soft tint (Stuck in red on pale
+   red), so the attention count is the same pair rather than solid red, which
+   was the loudest thing on the page. */
+.ng-filter .pc-lens-tab .pc-count[data-tone="error"] {
+  color: var(--pc-danger-ink);
+  background: var(--pc-danger-soft);
+}
+
 /* 44px targets on a coarse pointer (design 23 wave 1). The chassis does this
    for the layer row and the select cells only; the page's own controls and
    the chassis buttons and search on this page get it here until the chassis
@@ -1205,15 +1214,23 @@ ul {
   }
 }
 
-/* Between 480 and 720 the node column stays pinned at the left edge with the
-   status right beside it, so the verdict is on screen before any sideways
-   scroll: 34% of the frame for the name, truncated with its title. */
+/* Between 480 and 720 the node column stays pinned at the left edge, 34% of
+   the frame, truncated with its title, and the verdict moves into it on the
+   chassis's narrow status line under the name. A pinned name with a
+   scrolling Status beside it lost the verdict on the first sideways scroll,
+   and pinning both would leave the ports a third of a phone. The Status
+   column steps aside so nobody, sighted or not, gets the verdict twice. */
 @media (max-width: 720px) {
   .ng-exposure-table .pc-table:not([data-stacked="true"]) th.pc-name,
   .ng-exposure-table .pc-table:not([data-stacked="true"]) td.pc-name {
     width: 34vw;
     min-width: 0;
     max-width: 34vw;
+  }
+
+  .ng-exposure-table .pc-table:not([data-stacked="true"]) th.ng-th-status,
+  .ng-exposure-table .pc-table:not([data-stacked="true"]) td.ng-status-cell {
+    display: none;
   }
 }
 
@@ -1229,9 +1246,42 @@ ul {
   row-gap: 2px;
 }
 
+/* A folded row has height to spare and a phone has no title tooltip, so the
+   ports wrap onto as many lines as they need instead of fading out. */
 .ng-exposure-table .pc-table[data-stacked="true"] .ng-exposure {
   width: auto;
   min-width: 0;
+  flex-wrap: wrap;
+  row-gap: 2px;
+  white-space: normal;
+  -webkit-mask-image: none;
+  mask-image: none;
+}
+
+.ng-exposure-table .pc-table[data-stacked="true"] .ng-exposure > * {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+/* A folded row is one band. The chassis tints hover and selection cell by
+   cell, which on a flex row painted blocks behind the name and the menu and
+   left the gaps between cells bare; here the cells stay clear and the row
+   takes the tint. Hover only where a pointer can hover, so a tap does not
+   leave the row tinted after the finger lifts. */
+.ng-exposure-table .pc-table[data-stacked="true"] > tbody > tr > td,
+.ng-exposure-table .pc-table[data-stacked="true"] > tbody > tr > td.pc-name,
+.ng-exposure-table .pc-table[data-stacked="true"] > tbody > tr > td.pc-actions {
+  background: transparent;
+}
+
+@media (hover: hover) {
+  .ng-exposure-table .pc-table[data-stacked="true"] > tbody > tr:hover {
+    background-color: var(--pc-hover-solid);
+  }
+}
+
+.ng-exposure-table .pc-table[data-stacked="true"] > tbody > tr[data-selected="true"] {
+  background-color: color-mix(in oklab, var(--primary) 8%, var(--card));
 }
 
 .ng-exposure-table .pc-table[data-stacked="true"] td.ng-managed-cell {
