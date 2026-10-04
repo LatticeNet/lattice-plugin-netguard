@@ -94,91 +94,182 @@ ul {
   }
 }
 
-/* ── exposure cell ───────────────────────────────────────────────────────── */
+/* ── the Nodes table ─────────────────────────────────────────────────────── */
 
-/* The port list is mono and stays on one line: a wrapped value breaks the row
-   rhythm, the title carries the whole sentence, and the detail under the row
-   lists every listener. Width 0 with a 220px floor, so the list contributes
-   only the floor to the column's intrinsic width and the table can shrink to
-   a 1024 frame; the column's share above the floor comes from the header's
-   percentage width, and the list then fills whatever the column was given. */
-.ng-exposure {
-  display: block;
-  width: 0;
-  min-width: max(100%, 220px);
-  overflow: hidden;
-  font-family: var(--font-mono);
-  font-size: var(--text-mono);
-  font-variant-numeric: tabular-nums;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+/* One line per row. The node, then its verdict, then the ports: the eye starts
+   at the left edge, so the answer to "does this node need me" sits there and
+   colour is spent in one place, the ports no rule allows. Mono is for what
+   is an identifier or a number (ports, ages, ids); names and words are sans. */
+.ng-th-status {
+  width: 168px;
 }
 
 .ng-th-exposure {
   width: 36%;
 }
 
-.ng-exposure .ng-absent,
-.ng-exposure .ng-warn-text {
+.ng-th-seen {
+  width: 92px;
+}
+
+/* The ports stay on one line: a wrapped list breaks the row rhythm, the
+   title carries the whole sentence, and the panel lists every listener.
+   Width 0 with a 220px floor, so the list contributes only the floor to the
+   column's intrinsic width and the table can shrink to a 1024 frame. A list
+   longer than its cell fades at the right edge instead of cutting a port in
+   half; a short one never reaches the fade. */
+.ng-exposure {
+  display: flex;
+  width: 0;
+  min-width: max(100%, 220px);
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+  font-family: var(--font-mono);
+  font-size: var(--text-mono);
+  font-variant-numeric: tabular-nums;
+  line-height: 20px;
+  white-space: nowrap;
+  /* A mask reads only alpha: the token is any opaque value, not a colour. */
+  -webkit-mask-image: linear-gradient(to right, var(--foreground) calc(100% - var(--space-5)), transparent);
+  mask-image: linear-gradient(to right, var(--foreground) calc(100% - var(--space-5)), transparent);
+}
+
+.ng-exposure > * {
+  flex: 0 0 auto;
+}
+
+.ng-exposure .ng-absent {
   font-family: var(--ng-font);
   font-size: var(--pc-text-sm);
 }
 
-.ng-span-sep {
-  color: var(--muted-foreground);
-}
-
-/* An unexplained port: the "(!)" and the underline carry "nothing allows
-   this" without the red. The row opens the node's panel, which lists it. */
+/* A port no rule allows: a flagged token. Its fill and border carry "nothing
+   allows this" without relying on the hue alone, and the words go to a screen
+   reader. It is the only coloured thing in the row besides the status dot. */
 .ng-span-open {
+  display: inline-flex;
+  height: 20px;
+  align-items: center;
+  border-radius: var(--radius-sm);
+  padding: 0 6px;
   color: var(--pc-danger-ink);
+  background: var(--pc-danger-soft);
+  box-shadow: inset 0 0 0 1px var(--pc-danger-border);
   font-weight: 650;
-  text-decoration: underline;
-  text-decoration-thickness: 1px;
-  text-underline-offset: 3px;
 }
 
-/* A socket whose bind address the snapshot did not carry: listed, muted,
-   marked "(?)", and never counted as allowed or unexplained. */
-.ng-span-unknown {
-  color: var(--muted-foreground);
-}
-
+/* Ignored for this session: still listed and still counted, struck through. */
 .ng-span-open[data-ignored="true"] {
   color: var(--muted-foreground);
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--border);
   font-weight: 500;
   text-decoration: line-through;
 }
 
-/* The confined line under the open list: a gated port is a kind chip, any
-   other confinement is a muted sentence. */
-.ng-confined {
-  display: flex;
-  flex-wrap: nowrap;
-  align-items: center;
-  gap: var(--space-1);
-  margin-top: 2px;
-  overflow: hidden;
-  color: var(--muted-foreground);
-  line-height: 18px;
+.ng-span-allowed {
+  color: var(--foreground);
 }
 
-.ng-confined-item {
+/* A socket whose bind address the snapshot did not carry, or that was not
+   judged: listed, muted, marked "?", never counted as allowed or unexplained. */
+.ng-span-unknown {
+  color: var(--muted-foreground);
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+}
+
+/* The confined ports, one quiet phrase after the open ones. */
+.ng-confined {
+  color: var(--muted-foreground);
+}
+
+.ng-exposure > :not(.ng-confined) + .ng-confined::before {
+  margin-right: 6px;
+  content: "·";
+}
+
+.ng-managed-line {
+  display: block;
   overflow: hidden;
+  font-size: var(--pc-text-sm);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.ng-confined .pc-kind {
-  flex: 0 0 auto;
-  font-family: var(--font-mono);
+.ng-managed-note {
+  color: var(--muted-foreground);
 }
 
-/* The SEEN cell holds "30s ago" over "stale". The chassis gives a cell's
-   small line a 126px floor, which is right for a sentence and here costs the
-   width that keeps the six exposure columns inside a 1024 frame. */
-.pc-table td[data-label="Seen"] small {
-  min-width: max(100%, 48px);
+.ng-managed-note::before {
+  content: " · ";
+}
+
+.ng-seen-cell {
+  color: var(--muted-foreground);
+  font-family: var(--font-mono);
+  font-size: var(--text-mono);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.ng-seen-cell [data-snapshot="stale"] {
+  color: var(--warning-text);
+}
+
+/* What a layer's rows mean, said once at the top of the card where a header
+   used to repeat the layer's name and the tab's count. */
+.ng-layer-note {
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border);
+  color: var(--muted-foreground);
+  font-size: var(--pc-text-sm);
+  line-height: 1.5;
+}
+
+/* ── the Nodes filter ────────────────────────────────────────────────────── */
+
+/* The chassis's lens look on a radio group (FilterSwitch.vue). The chassis
+   keys its selected state on aria-selected, which a radio does not carry, so
+   the same drawing is repeated here on aria-checked. */
+.ng-filter {
+  flex: 0 0 auto;
+}
+
+.ng-filter .pc-lens-tab[aria-checked="true"] {
+  color: var(--foreground);
+  background: var(--muted);
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+
+.ng-filter .pc-lens-tab .pc-count:not([data-tone]) {
+  color: var(--muted-foreground);
+}
+
+/* 44px targets on a coarse pointer (design 23 wave 1). The chassis does this
+   for the layer row and the select cells only; the page's own controls and
+   the chassis buttons and search on this page get it here until the chassis
+   carries it for every control. */
+@media (pointer: coarse) {
+  .ng-filter .pc-lens-tab,
+  .pc-workspace .pc-button,
+  .pc-overlay .pc-button,
+  .pc-search input,
+  .ng-field input,
+  .ng-field select {
+    min-height: 44px;
+  }
+
+  .pc-overlay .pc-icon-button {
+    width: 44px;
+    height: 44px;
+  }
+
+  .pc-table th .pc-sort {
+    min-height: 44px;
+  }
 }
 
 /* ── rules under a group ─────────────────────────────────────────────────── */
@@ -874,12 +965,6 @@ ul {
 
 /* ── Nodes: one click target per row ────────────────────────────────────── */
 
-.ng-filter {
-  min-height: 30px;
-  padding-block: 4px;
-  font-size: var(--pc-text-xs);
-}
-
 .ng-click-row {
   cursor: pointer;
 }
@@ -919,6 +1004,18 @@ ul {
   background-color: color-mix(in oklab, var(--primary) 8%, var(--card));
 }
 
+/* The menu trigger is quiet until a row is pointed at or the menu is open,
+   as the console's own row menus are: a bordered box on every row drew a
+   column of buttons louder than the data beside it. */
+.pc-table .rm-trigger {
+  color: var(--muted-foreground);
+}
+
+.pc-table tr:hover .rm-trigger,
+.pc-table .rm-trigger[aria-expanded="true"] {
+  color: var(--foreground);
+}
+
 /* Overlays are fixed to the frame. The workspace spaces its children with a
    top margin, and that margin also moved the fixed side panel and the modal
    scrim 16px down from the frame's top edge, leaving a strip of page between
@@ -950,12 +1047,19 @@ ul {
   padding-top: 0;
 }
 
-.ng-node-panel .ng-cards {
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+/* The drift card holds two 64 character hashes to be compared, so it takes
+   the panel's full width; squeezed into a third of it each hash broke over
+   four lines. Reporting and Authority share the row under it, two tracks of
+   the sheet's 240px minimum. */
+.ng-node-panel .ng-cards > .ng-card:first-child {
+  grid-column: 1 / -1;
 }
 
+/* The verdict sits on the claim's first line, not centred on a block of
+   three lines with an empty gutter under it. */
 .ng-node-panel .ng-attn-row {
   grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
 }
 
 .ng-node-panel .ng-attn-actions {
@@ -1101,19 +1205,69 @@ ul {
   }
 }
 
-/* The node column stays pinned at the left edge and gives the rest of the
-   row the room: 38% of the frame, the name truncated with its title. The
-   snapshot dot leaves the name; the Seen column says the same in words. */
+/* Between 480 and 720 the node column stays pinned at the left edge with the
+   status right beside it, so the verdict is on screen before any sideways
+   scroll: 34% of the frame for the name, truncated with its title. */
 @media (max-width: 720px) {
-  .ng-exposure-table th.pc-name,
-  .ng-exposure-table td.pc-name {
-    width: 38vw;
+  .ng-exposure-table .pc-table:not([data-stacked="true"]) th.pc-name,
+  .ng-exposure-table .pc-table:not([data-stacked="true"]) td.pc-name {
+    width: 34vw;
     min-width: 0;
-    max-width: 38vw;
+    max-width: 34vw;
+  }
+}
+
+/* Below 480 a row folds into lines: the node and its menu, then the verdict,
+   who governs it and the evidence age, then the ports across the full width.
+   Every node's verdict and ports are on screen without a sideways scroll. */
+.ng-exposure-table .pc-table[data-stacked="true"] td[data-stack="summary"] {
+  order: 4;
+}
+
+.ng-exposure-table .pc-table[data-stacked="true"] tr {
+  position: relative;
+  row-gap: 2px;
+}
+
+.ng-exposure-table .pc-table[data-stacked="true"] .ng-exposure {
+  width: auto;
+  min-width: 0;
+}
+
+.ng-exposure-table .pc-table[data-stacked="true"] td.ng-managed-cell {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.ng-exposure-table .pc-table[data-stacked="true"] td.ng-managed-cell .ng-managed-line,
+.ng-exposure-table .pc-table[data-stacked="true"] td.ng-seen-cell {
+  color: var(--muted-foreground);
+  font-size: var(--pc-text-xs);
+}
+
+/* On a touch screen the whole folded row is the name's target, so a tap
+   anywhere on it opens the node; the menu sits above that target. */
+@media (pointer: coarse) {
+  .ng-exposure-table .pc-table[data-stacked="true"] .ng-row-open::after {
+    position: absolute;
+    inset: 0;
+    content: "";
   }
 
-  .ng-exposure-table td.pc-name .pc-state-dot {
-    display: none;
+  .ng-exposure-table .pc-table[data-stacked="true"] td[data-stack="actions"] {
+    position: relative;
+    z-index: 1;
+  }
+
+  /* The menu keeps its 44px target without making the name's line 44px tall. */
+  .ng-exposure-table .pc-table[data-stacked="true"] .rm-trigger {
+    margin-block: -12px;
+  }
+
+  .pc-table .rm-trigger {
+    width: 44px;
+    height: 44px;
   }
 }
 

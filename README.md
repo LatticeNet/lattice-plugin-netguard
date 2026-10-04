@@ -44,18 +44,26 @@ install it.
   row counted. A failed overview read leaves ports unjudged: no port is
   called unexplained, the picture is not drawn, and drift, which the server
   computes, stays.
-- **Nodes:** one row per node answering what is open to the internet right
-  now. The exposure column is computed from the node's reported listeners on
-  non-loopback binds, minus what a bound group rule or trusted zone confines;
-  a port nothing explains is red. A port the node's SSH knock table gates is
-  confined, not open: it prints as a "gated" chip. A click on the row opens the
-  node's side panel (`open=<node_id>`) with its unexplained ports and a
-  suggestion for each, drift hashes, listening sockets, interfaces, foreign
-  nftables tables, and the ruleset its intent compiles to, with the per-node
-  review and apply flow. The row's one menu holds Review and apply, Adopt
-  baseline and Edit binding; a disabled item says why under its label. A
-  filter keeps only the nodes that need attention. The columns stay at 375,
-  with the node column pinned.
+- **Nodes:** one line per node answering what is open to the internet right
+  now. Status, beside the name, is the node's verdict: drifted, apply failed,
+  ports with no rule, stale, never reported, not read, not judged, then the
+  quiet states (enforced, never applied, not enforced, no binding). Its dot
+  is red on exactly the nodes the Needs attention filter keeps. The ports
+  column is computed from the node's reported listeners on non-loopback
+  binds, minus what a bound group rule or trusted zone confines; a port
+  nothing explains is a flagged token, listed first. A port the node's SSH
+  knock table gates is confined, not open: it reads "22 gated" in the quiet
+  phrase after the open ports. The node id is printed under the name only
+  when it is not the name's slug. A click on the row opens the node's side
+  panel (`open=<node_id>`) with its unexplained ports and a suggestion for
+  each, drift hashes, listening sockets, interfaces, foreign nftables
+  tables, and the ruleset its intent compiles to, with the per-node review
+  and apply flow. The row's one menu holds Review and apply, Adopt baseline
+  and Edit binding; a disabled item says why under its label. A segmented
+  filter, All or Needs attention, each with its count, keeps only the nodes
+  that need attention. From 480 to 720 the node column is pinned with the
+  status beside it; below 480 each row folds into the node and its menu,
+  then the verdict, then the ports.
 - **Adopt baseline** asks first, and shows what the next apply installs: the
   baseline's rules, the trusted zones, and the ports open now that the apply
   would close. Adopting writes nothing to the node.

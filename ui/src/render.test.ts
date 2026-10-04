@@ -65,6 +65,7 @@ const tableProps = (rows: ExposureRowView[]) => ({
   ignored: new Set<string>(),
   now: Date.parse("2026-09-30T10:00:41Z"),
   canSeeReality: true,
+  realityRead: true,
 });
 
 describe("the Nodes table, rendered", () => {
@@ -73,6 +74,28 @@ describe("the Nodes table, rendered", () => {
     expect(html.match(/class="ng-span-open"/g)).toHaveLength(4);
     expect(html).toContain("open with no rule allowing it");
     expect(html).toContain("41s ago");
+  });
+
+  it("puts each row's verdict before its ports, and the ports no rule allows first", async () => {
+    const html = (await render(ExposureTable, tableProps(views(true)))).replace(/<!--[^>]*-->/g, "");
+    expect(html.match(/2 ports, no rule/g)).toHaveLength(2);
+    expect(html.indexOf("2 ports, no rule")).toBeLessThan(html.indexOf('class="ng-span-open"'));
+    // 22 and 5432 are both unexplained here, so both are flagged and nothing is printed as allowed.
+    expect(html).not.toContain('class="ng-span-allowed"');
+    // The id is the name here, so it is not printed a second time under it.
+    expect(html).not.toMatch(/<small[^>]*>cd-build-1<\/small>/);
+  });
+
+  it("says a snapshot was not read, not that the node never reported, after a failed reality read", async () => {
+    const unread = ["cd-build-1"].map((id) => {
+      const r = row(id, { snapshotStatus: "unknown", collectedAt: undefined });
+      return { row: r, exposure: computeExposure(r, undefined, empty, undefined, true), detail: "loaded" as const };
+    });
+    const html = await render(ExposureTable, { ...tableProps(unread), realityRead: false });
+    expect(html).toContain(">Not read<");
+    expect(html).toContain(">not read<");
+    expect(html).not.toContain("Never reported");
+    expect(html).not.toContain(">never<");
   });
 
   it("draws no port as unexplained and no binding as none when the rules were not read", async () => {

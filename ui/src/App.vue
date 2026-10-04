@@ -25,7 +25,6 @@ import { BridgeClient, canCall, type HostInit } from "@latticenet/plugin-bridge"
 import {
   PcButton,
   PcConfirmDialog,
-  PcCount,
   PcEmptyState,
   PcLensTab,
   PcLensTabs,
@@ -33,7 +32,6 @@ import {
   PcPageHeader,
   PcPagination,
   PcPanel,
-  PcPanelHeader,
   PcProofLine,
   PcSearchField,
   PcSidePanel,
@@ -51,6 +49,7 @@ import ApplyDialog from "./components/ApplyDialog.vue";
 import AttentionList from "./components/AttentionList.vue";
 import BindingEditor from "./components/BindingEditor.vue";
 import ExposureTable from "./components/ExposureTable.vue";
+import FilterSwitch, { type FilterOption } from "./components/FilterSwitch.vue";
 import GroupEditor from "./components/GroupEditor.vue";
 import GroupsTable from "./components/GroupsTable.vue";
 import NodeDetail from "./components/NodeDetail.vue";
@@ -1007,6 +1006,22 @@ const showToolbar = computed(() =>
 const toolbarVerb = computed(() => createVerb({ canAdmin: canAdmin.value, overviewFailed: overviewFailed.value, view: view.value }));
 /** The attention count is a number only when both reads landed; otherwise it is not known. */
 const attentionKnown = computed(() => !overviewFailed.value && !realityFailed.value);
+/** The Nodes filter, each option with its count; a count nobody could read is left off. */
+const filterOptions = computed<FilterOption<NodeFilter>[]>(() => [
+  { value: "all", label: "All", count: tabCount(counts.value.total, realityFailed.value) },
+  {
+    value: "attention",
+    label: "Needs attention",
+    count: attentionKnown.value ? tabCount(attentionCount.value, false) : null,
+    tone: attentionKnown.value && attentionCount.value > 0 ? "error" : undefined,
+  },
+]);
+/** What the Nodes rows cannot claim, said once beside the filter instead of in a card header. */
+const nodesNote = computed(() => {
+  if (realityFailed.value) return "intent only: reality not read";
+  if (overviewFailed.value) return "rules not read, ports not judged";
+  return "";
+});
 /** The Nodes attention filter with nothing in it: an all-clear only for what was read. */
 const attentionEmpty = computed(() =>
   attentionEmptyCopy({
@@ -1067,17 +1082,14 @@ function tabCount(value: number, failed: boolean): number | null {
     </PcLensTabs>
 
     <PcToolbar v-if="showToolbar" label="NetGuard toolbar" :data-view="view">
+      <template v-if="view === 'nodes'" #tabs>
+        <FilterSwitch v-model="nodeFilter" :options="filterOptions" label="Which nodes to show" />
+      </template>
       <template #search>
         <PcSearchField v-model="search" :label="searchLabel" :placeholder="searchPlaceholder" />
       </template>
-      <template v-if="view === 'nodes'" #note>
-        <select v-model="nodeFilter" class="pc-select ng-filter" aria-label="Which nodes to show">
-          <option value="all">All nodes</option>
-          <option value="attention">Needs attention{{ attentionKnown ? ` (${attentionCount})` : '' }}</option>
-        </select>
-        <span v-if="matchNote">{{ matchNote }}</span>
-      </template>
-      <template v-else-if="matchNote || permissionNote" #note>{{ matchNote || permissionNote }}</template>
+      <template v-if="view === 'nodes' && (matchNote || nodesNote)" #note>{{ matchNote || nodesNote }}</template>
+      <template v-else-if="view !== 'nodes' && (matchNote || permissionNote)" #note>{{ matchNote || permissionNote }}</template>
       <!-- The creating verb lives on the layer it creates in, and only once that layer was read. -->
       <template v-if="toolbarVerb" #primary>
         <PcButton v-if="toolbarVerb === 'zone'" variant="primary" @click="openZone()"><template #icon><Plus :size="15" /></template>New zone</PcButton>
@@ -1092,11 +1104,12 @@ function tabCount(value: number, failed: boolean): number | null {
       </PcEmptyState>
     </PcPanel>
 
+    <!-- The skeleton has the shape of the layer it stands in for: the Overview
+         has a numbers strip, the collection layers have rows only. -->
     <template v-else-if="loading">
-      <PcSkeleton variant="strip" :count="4" label="Loading the firewall summary" />
+      <PcSkeleton v-if="view === 'overview'" variant="strip" :count="4" label="Loading the firewall summary" />
       <PcPanel label="Loading">
-        <PcPanelHeader title="Loading firewall state" description="The declared intent and every node's last snapshot are on their way." />
-        <PcSkeleton :count="8" label="Loading firewall state" />
+        <PcSkeleton :count="8" label="Loading firewall state: the declared intent and every node's last snapshot" />
       </PcPanel>
     </template>
 
@@ -1125,13 +1138,9 @@ function tabCount(value: number, failed: boolean): number | null {
       </template>
     </section>
 
+    <!-- No card header: the selected layer already names this list, and its
+         counts sit on the filter above it. The card holds the rows only. -->
     <PcPanel v-else-if="view === 'nodes'" id="pc-panel-nodes" role="tabpanel" aria-labelledby="pc-tab-nodes">
-      <PcPanelHeader title="Nodes" description="What each node has open to the internet, against what you declared. Open a row for its evidence, its generated ruleset and its actions.">
-        <PcCount v-if="realityFailed" value="intent only: reality not read" />
-        <PcCount v-else-if="overviewFailed" :value="`${plural(counts.total, 'node', 'nodes')} · rules not read, ports not judged`" />
-        <PcCount v-else :value="`${plural(counts.total, 'node', 'nodes')}${attentionCount ? ` · ${attentionCount} need attention` : ''}`" />
-      </PcPanelHeader>
-
       <PcEmptyState v-if="!posture.length" title="No nodes are visible">
         <template #icon><Radar :size="26" /></template>
         <p>This session can see no nodes at all. A node appears here once its agent reports, or once it is bound to a security group.</p>
@@ -1158,6 +1167,7 @@ function tabCount(value: number, failed: boolean): number | null {
         :ignored="ignored"
         :now="now"
         :can-see-reality="canSeeReality"
+        :reality-read="!realityFailed"
         @sort="onSort"
         @open="openNode"
         @action="onNodeAction"
@@ -1176,9 +1186,7 @@ function tabCount(value: number, failed: boolean): number | null {
     </PcPanel>
 
     <PcPanel v-else-if="view === 'groups'" id="pc-panel-groups" role="tabpanel" aria-labelledby="pc-tab-groups">
-      <PcPanelHeader title="Security groups" description="Ordered rules, attached to one or more nodes. The chain policy stays default drop, so anything no rule accepts is dropped. A group folds its rules underneath.">
-        <PcCount v-if="!overviewFailed" :value="plural(overview.groups.length, 'group', 'groups')" />
-      </PcPanelHeader>
+      <p class="ng-layer-note">Ordered rules, attached to one or more nodes. The chain policy stays default drop, so anything no rule accepts is dropped. A group folds its rules underneath.</p>
       <PcEmptyState v-if="overviewFailed" kind="error" title="Groups were not read">
         <p>The overview request failed, so nothing here is known. The notice above says why.</p>
         <template #actions><PcButton :busy="refreshing" @click="refresh(true)">Try again</PcButton></template>
@@ -1209,9 +1217,7 @@ function tabCount(value: number, failed: boolean): number | null {
     </PcPanel>
 
     <PcPanel v-else id="pc-panel-zones" role="tabpanel" aria-labelledby="pc-tab-zones">
-      <PcPanelHeader title="Trusted zones" description="Interfaces and CIDRs a node accepts before any security group is evaluated, once its binding trusts the zone. A built-in zone is defined on every node; loopback is always accepted.">
-        <PcCount v-if="!overviewFailed" :value="plural(overview.zones.length, 'zone', 'zones')" />
-      </PcPanelHeader>
+      <p class="ng-layer-note">Interfaces and CIDRs a node accepts before any security group is evaluated, once its binding trusts the zone. A built-in zone is defined on every node; loopback is always accepted.</p>
       <PcEmptyState v-if="overviewFailed" kind="error" title="Zones were not read">
         <p>The overview request failed, so nothing here is known. The notice above says why.</p>
         <template #actions><PcButton :busy="refreshing" @click="refresh(true)">Try again</PcButton></template>
