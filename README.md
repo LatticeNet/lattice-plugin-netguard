@@ -48,10 +48,13 @@ install it.
   now. Status, beside the name, is the node's verdict: drifted, apply failed,
   ports with no rule, stale, never reported, not read, not judged, then the
   quiet states (enforced, never applied, not enforced, no binding). Its dot
-  is red on exactly the nodes the Needs attention filter keeps. The ports
-  column is computed from the node's reported listeners on non-loopback
-  binds, minus what a bound group rule or trusted zone confines; a port
-  nothing explains is a flagged token, listed first. A port the node's SSH
+  is red on exactly the nodes the Needs attention filter keeps, including
+  for a session that can read only intent, where a failed apply still shows.
+  The table opens sorted by Status, worst first: drifted, apply failed, most
+  ports with no rule, then the warnings, the neutral states and enforced.
+  The ports column is computed from the node's reported listeners on
+  non-loopback binds, minus what a bound group rule or trusted zone
+  confines; a port nothing explains is a flagged token, listed first. A port the node's SSH
   knock table gates is confined, not open: it reads "22 gated" in the quiet
   phrase after the open ports. The node id is printed under the name only
   when it is not the name's slug. A click on the row opens the node's side
@@ -61,9 +64,10 @@ install it.
   and apply flow. The row's one menu holds Review and apply, Adopt baseline
   and Edit binding; a disabled item says why under its label. A segmented
   filter, All or Needs attention, each with its count, keeps only the nodes
-  that need attention. From 480 to 720 the node column is pinned with the
-  status beside it; below 480 each row folds into the node and its menu,
-  then the verdict, then the ports.
+  that need attention; its counts appear only when the reads behind them
+  landed. From 480 to 720 the node column is pinned with the status beside
+  it; below 480 each row folds into the node and its menu, then the verdict,
+  then the ports.
 - **Adopt baseline** asks first, and shows what the next apply installs: the
   baseline's rules, the trusted zones, and the ports open now that the apply
   would close. Adopting writes nothing to the node.

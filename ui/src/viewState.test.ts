@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { DEFAULT_NG_STATE, createVerb, decodeNgState, nodePanelState, showLayerToolbar, type NgView } from "./viewState";
+import { DEFAULT_NG_STATE, createVerb, decodeNgState, nodeFilterOptions, nodePanelState, showLayerToolbar, type NgView } from "./viewState";
 
 describe("the node panel's state", () => {
   it("says a node is missing only after a read that landed", () => {
@@ -51,5 +51,27 @@ describe("the layer toolbar", () => {
     for (const view of ["overview", "nodes"] as const) expect(createVerb({ canAdmin: true, overviewFailed: false, view })).toBeNull();
     expect(createVerb({ canAdmin: false, overviewFailed: false, view: "groups" })).toBeNull();
     expect(createVerb({ canAdmin: true, overviewFailed: true, view: "zones" })).toBeNull();
+  });
+});
+
+describe("the Nodes filter's counts", () => {
+  const read = { pending: false, total: 33, attention: 8, canSeeReality: true, realityFailed: false, overviewFailed: false };
+
+  it("counts both options once both reads landed, and reddens only a count above zero", () => {
+    expect(nodeFilterOptions(read)).toEqual([
+      { value: "all", label: "All", count: 33 },
+      { value: "attention", label: "Needs attention", count: 8, tone: "error" },
+    ]);
+    expect(nodeFilterOptions({ ...read, attention: 0 })[1]).toEqual({ value: "attention", label: "Needs attention", count: 0, tone: undefined });
+  });
+
+  it("prints no attention count it could not read", () => {
+    // Rules unread: no port can be called unexplained. Reality unread or out
+    // of scope: drift and open ports are unknown, so a count would hold only
+    // the failed applies and look like the whole answer.
+    expect(nodeFilterOptions({ ...read, overviewFailed: true })[1]).toMatchObject({ count: null, tone: undefined });
+    expect(nodeFilterOptions({ ...read, realityFailed: true }).map((option) => option.count)).toEqual([null, null]);
+    expect(nodeFilterOptions({ ...read, canSeeReality: false })).toMatchObject([{ count: 33 }, { count: null, tone: undefined }]);
+    expect(nodeFilterOptions({ ...read, pending: true }).map((option) => option.count)).toEqual([null, null]);
   });
 });

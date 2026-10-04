@@ -49,7 +49,7 @@ import ApplyDialog from "./components/ApplyDialog.vue";
 import AttentionList from "./components/AttentionList.vue";
 import BindingEditor from "./components/BindingEditor.vue";
 import ExposureTable from "./components/ExposureTable.vue";
-import FilterSwitch, { type FilterOption } from "./components/FilterSwitch.vue";
+import FilterSwitch from "./components/FilterSwitch.vue";
 import GroupEditor from "./components/GroupEditor.vue";
 import GroupsTable from "./components/GroupsTable.vue";
 import NodeDetail from "./components/NodeDetail.vue";
@@ -89,6 +89,7 @@ import {
   type ReviewResponse,
   type SecurityGroup,
 } from "./netguardModel";
+import { attentionComparator } from "./nodeStatus";
 import {
   attentionEmptyCopy,
   attentionItems,
@@ -117,6 +118,7 @@ import {
   createVerb,
   decodeNgState,
   encodeNgState,
+  nodeFilterOptions,
   nodePanelState,
   showLayerToolbar,
   type NgPageState,
@@ -439,14 +441,16 @@ const sortKey = ref<ExposureSortKey>("attention");
 const sortDirection = ref<"asc" | "desc">("asc");
 /**
  * The settled display order. Rows are read through it rather than sorted
- * live, because the default order ranks by unexplained ports and every node
- * reports 0 of those until its own snapshot read returns: a live sort moves
+ * live, because the default order ranks by each row's verdict and every node
+ * reads as "Reading" until its own snapshot read returns: a live sort moves
  * the row under the pointer for the first seconds after load.
  */
 const order = ref<OrderIndex>(new Map());
 
 function settle(): void {
-  order.value = settleOrder(views.value, sortKey.value, sortDirection.value);
+  // The same verdicts the Status column draws (ExposureTable passes the same
+  // two flags to nodeStatus), so the default order and the dots agree.
+  order.value = settleOrder(views.value, sortKey.value, sortDirection.value, attentionComparator(canSeeReality.value, !realityFailed.value));
 }
 
 function onSort(key: ExposureSortKey): void {
@@ -962,11 +966,13 @@ const proofTitle = computed(() => {
 const proofSegments = computed(() => {
   if (realityFailed.value && overviewFailed.value) return ["not read: neither the overview nor node reality answered"];
   if (realityFailed.value) return ["node reality not read", "intent only, see the notice below"];
+  // A session that cannot read reality never asked any node, so it counts
+  // what was declared and claims no node "never reported".
+  if (!canSeeReality.value) return ["reality not readable", `${plural(counts.value.total, "node", "nodes")} declared`];
   const segments: string[] = [];
   // The console's form: a relative age here, the absolute instant in the line's title.
   if (newestObserved.value) segments.push(`observed ${ageLabel(newestObserved.value, now.value)} ago`);
-  else if (canSeeReality.value) segments.push("not observed yet");
-  else segments.push("reality not readable");
+  else segments.push("not observed yet");
   segments.push(`${plural(counts.value.total, "node", "nodes")} report`);
   if (counts.value.stale) segments.push(`${counts.value.stale} stale`);
   if (counts.value.neverReported) segments.push(`${counts.value.neverReported} never reported`);
@@ -1004,18 +1010,17 @@ const showToolbar = computed(() =>
   showLayerToolbar({ loading: loading.value, bootError: Boolean(bootError.value), view: view.value, rows: layerRows.value, q: search.value, show: nodeFilter.value }),
 );
 const toolbarVerb = computed(() => createVerb({ canAdmin: canAdmin.value, overviewFailed: overviewFailed.value, view: view.value }));
-/** The attention count is a number only when both reads landed; otherwise it is not known. */
-const attentionKnown = computed(() => !overviewFailed.value && !realityFailed.value);
-/** The Nodes filter, each option with its count; a count nobody could read is left off. */
-const filterOptions = computed<FilterOption<NodeFilter>[]>(() => [
-  { value: "all", label: "All", count: tabCount(counts.value.total, realityFailed.value) },
-  {
-    value: "attention",
-    label: "Needs attention",
-    count: attentionKnown.value ? tabCount(attentionCount.value, false) : null,
-    tone: attentionKnown.value && attentionCount.value > 0 ? "error" : undefined,
-  },
-]);
+/** The Nodes filter, each option with its count; a count nobody could read is left off (viewState.ts). */
+const filterOptions = computed(() =>
+  nodeFilterOptions({
+    pending: loading.value || Boolean(bootError.value),
+    total: counts.value.total,
+    attention: attentionCount.value,
+    canSeeReality: canSeeReality.value,
+    realityFailed: realityFailed.value,
+    overviewFailed: overviewFailed.value,
+  }),
+);
 /** What the Nodes rows cannot claim, said once beside the filter instead of in a card header. */
 const nodesNote = computed(() => {
   if (realityFailed.value) return "intent only: reality not read";

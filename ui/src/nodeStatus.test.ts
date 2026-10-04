@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import { KNOCK_SCOPE, type ConfinedSpan, type NodeExposure, type OpenSpan } from "./exposure";
 import { idAddsInformation } from "./identity";
-import { confinedPhrase, managedCell, nodeStatus, orderedOpen } from "./nodeStatus";
+import { applyOrder, settleOrder } from "./exposure";
+import { attentionComparator, confinedPhrase, managedCell, nodeStatus, orderedOpen, statusRank } from "./nodeStatus";
 import { needsAttention, type DetailState, type ExposureRowView } from "./overview";
 import type { PostureRow } from "./posture";
 
@@ -105,7 +106,15 @@ describe("nodeStatus", () => {
   });
 
   it("states only the declared coverage to a session that cannot read reality", () => {
-    expect(nodeStatus(view({ driftState: "drift" }), false)).toMatchObject({ key: "intent-only", tone: "neutral", label: "Managed" });
+    const intentOnly = view({ snapshotStatus: "unknown", driftState: "unknown", collectedAt: undefined }, { evidence: "none" }, "pending");
+    expect(nodeStatus(intentOnly, false)).toMatchObject({ key: "intent-only", tone: "neutral", label: "Managed" });
+  });
+
+  it("still says the apply failed to a session that cannot read reality", () => {
+    // The failed apply is in the binding, which an intent-only session reads,
+    // and the Needs attention filter keeps the row for it.
+    const failed = view({ snapshotStatus: "unknown", driftState: "unknown", collectedAt: undefined, lastError: "nft: exit 1" }, { evidence: "none" }, "pending");
+    expect(nodeStatus(failed, false)).toMatchObject({ key: "apply-failed", tone: "error", label: "Apply failed" });
   });
 
   it("paints the error tone on exactly the rows the Needs attention filter keeps", () => {
@@ -118,8 +127,76 @@ describe("nodeStatus", () => {
       view({ snapshotStatus: "unknown" }, { evidence: "none" }),
       view({}, { unexplained: 2 }, "pending"),
       view({ coverage: "unbound", driftState: "unknown" }, { managedBy: { kind: "none" } }),
+      view({ snapshotStatus: "unknown", driftState: "unknown", lastError: "boom" }, { evidence: "none" }, "pending"),
+      view({ snapshotStatus: "stale", lastError: "boom" }, { evidence: "stale" }),
+      view({ snapshotStatus: "unknown", driftState: "unknown" }, { evidence: "none" }, "pending"),
     ];
-    for (const candidate of rows) expect(nodeStatus(candidate, true).tone === "error").toBe(needsAttention(candidate));
+    // Both for a session that reads reality and for one that reads only intent.
+    for (const canSeeReality of [true, false]) {
+      for (const realityRead of [true, false]) {
+        for (const candidate of rows) expect(nodeStatus(candidate, canSeeReality, realityRead).tone === "error").toBe(needsAttention(candidate));
+      }
+    }
+  });
+});
+
+describe("the default order", () => {
+  const named = (name: string, rowOver: Partial<PostureRow> = {}, exposureOver: Partial<NodeExposure> = {}, detail: DetailState = "loaded"): ExposureRowView =>
+    view({ nodeId: name, nodeName: name, ...rowOver }, { nodeId: name, ...exposureOver }, detail);
+
+  // One of each verdict, named so that a name sort would put them in the
+  // wrong order: the order has to come from the verdict.
+  const fleet = [
+    named("a-enforced"),
+    named("b-no-binding", { coverage: "unbound", driftState: "unknown" }, { managedBy: { kind: "none" }, enforced: false }),
+    named("c-never-reported", { snapshotStatus: "unknown", driftState: "unknown", collectedAt: undefined }, { evidence: "none" }),
+    named("d-stale", { snapshotStatus: "stale" }, { evidence: "stale" }),
+    named("e-two-ports", { coverage: "observe_only", driftState: "unknown" }, { unexplained: 2, enforced: false }),
+    named("f-five-ports", { coverage: "observe_only", driftState: "unknown" }, { unexplained: 5, enforced: false }),
+    named("g-apply-failed", { lastError: "nft: exit 1" }),
+    named("h-never-applied", { driftState: "unknown", appliedTableSha: undefined }),
+    named("i-drifted", { driftState: "drift" }),
+  ];
+
+  it("ranks every error verdict above every warning, warnings above neutral states, and those above enforced", () => {
+    const toneRank = { error: 0, warning: 1, neutral: 2, healthy: 3 } as const;
+    const statuses = fleet.map((candidate) => nodeStatus(candidate, true));
+    for (const a of statuses) {
+      for (const b of statuses) {
+        if (toneRank[a.tone as keyof typeof toneRank] < toneRank[b.tone as keyof typeof toneRank]) expect(statusRank(a.key)).toBeLessThan(statusRank(b.key));
+      }
+    }
+  });
+
+  it("opens on the verdicts that need a hand, worst first, and keeps a failed apply above every enforced node", () => {
+    const order = settleOrder(fleet, "attention", "asc", attentionComparator(true, true));
+    expect(applyOrder(fleet, order).map((candidate) => candidate.row.nodeId)).toEqual([
+      "i-drifted",
+      "g-apply-failed",
+      "f-five-ports",
+      "e-two-ports",
+      "d-stale",
+      "h-never-applied",
+      "c-never-reported",
+      "b-no-binding",
+      "a-enforced",
+    ]);
+  });
+
+  it("reverses to enforced first when the Status header is clicked", () => {
+    const order = settleOrder(fleet, "attention", "desc", attentionComparator(true, true));
+    const ids = applyOrder(fleet, order).map((candidate) => candidate.row.nodeId);
+    expect(ids[0]).toBe("a-enforced");
+    expect(ids.at(-1)).toBe("i-drifted");
+  });
+
+  it("ranks a failed apply first for a session that reads only intent", () => {
+    const intentOnly = [
+      named("a-managed", { snapshotStatus: "unknown", driftState: "unknown" }, { evidence: "none" }, "pending"),
+      named("z-failed", { snapshotStatus: "unknown", driftState: "unknown", lastError: "nft: exit 1" }, { evidence: "none" }, "pending"),
+    ];
+    const order = settleOrder(intentOnly, "attention", "asc", attentionComparator(false, true));
+    expect(applyOrder(intentOnly, order).map((candidate) => candidate.row.nodeId)).toEqual(["z-failed", "a-managed"]);
   });
 });
 

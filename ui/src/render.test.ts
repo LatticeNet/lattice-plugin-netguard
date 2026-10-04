@@ -79,6 +79,8 @@ describe("the Nodes table, rendered", () => {
   it("puts each row's verdict before its ports, and the ports no rule allows first", async () => {
     const html = (await render(ExposureTable, tableProps(views(true)))).replace(/<!--[^>]*-->/g, "");
     expect(html.match(/2 ports, no rule/g)).toHaveLength(2);
+    // Both rows need attention, and both carry the marker.
+    expect(html.match(/data-attention="true"/g)).toHaveLength(2);
     expect(html.indexOf("2 ports, no rule")).toBeLessThan(html.indexOf('class="ng-span-open"'));
     // 22 and 5432 are both unexplained here, so both are flagged and nothing is printed as allowed.
     expect(html).not.toContain('class="ng-span-allowed"');
@@ -96,6 +98,19 @@ describe("the Nodes table, rendered", () => {
     expect(html).toContain(">not read<");
     expect(html).not.toContain("Never reported");
     expect(html).not.toContain(">never<");
+  });
+
+  it("tells a session that cannot read reality that the age is not readable, and still names a failed apply", async () => {
+    const intentOnly = ["cd-build-1", "cd-lab-1"].map((id) => {
+      const r = row(id, { snapshotStatus: "unknown", collectedAt: undefined, coverage: "managed", ...(id === "cd-lab-1" ? { lastError: "nft: exit 1" } : {}) });
+      return { row: r, exposure: computeExposure(r, undefined, empty, undefined, true), detail: "pending" as const };
+    });
+    const html = await render(ExposureTable, { ...tableProps(intentOnly), canSeeReality: false });
+    expect(html.match(/>not readable</g)).toHaveLength(2);
+    expect(html).not.toContain(">never<");
+    expect(html).toContain("Apply failed");
+    expect(html).toContain("The last apply failed: nft: exit 1");
+    expect(html.match(/data-attention="true"/g)).toHaveLength(1);
   });
 
   it("draws no port as unexplained and no binding as none when the rules were not read", async () => {

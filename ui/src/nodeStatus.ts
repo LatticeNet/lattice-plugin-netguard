@@ -61,14 +61,10 @@ function plural(count: number, one: string, many: string): string {
  */
 export function nodeStatus(view: ExposureRowView, canSeeReality: boolean, realityRead = true): NodeStatus {
   const { row, exposure } = view;
-  if (!canSeeReality) {
-    return {
-      key: "intent-only",
-      tone: "neutral",
-      label: row.coverage === "managed" ? "Managed" : row.coverage === "observe_only" ? "Observe only" : row.coverage === "legacy" ? "Not adopted" : "No binding",
-      title: "This session cannot read node reality, so only the declared intent is known.",
-    };
-  }
+  // The three error checks are the Needs attention filter term for term, and
+  // they come before anything that depends on what the session can read: a
+  // failed apply is in the binding (intent), so a session without reality
+  // still has it, and a row the filter keeps has to say why it was kept.
   if (row.driftState === "drift") {
     return {
       key: "drift",
@@ -87,6 +83,14 @@ export function nodeStatus(view: ExposureRowView, canSeeReality: boolean, realit
       tone: "error",
       label: `${ports}, no rule`,
       title: `${ports} open to the internet that no rule allows.${exposure.enforced ? "" : " Nothing on this node enforces its rules."}`,
+    };
+  }
+  if (!canSeeReality) {
+    return {
+      key: "intent-only",
+      tone: "neutral",
+      label: row.coverage === "managed" ? "Managed" : row.coverage === "observe_only" ? "Observe only" : row.coverage === "legacy" ? "Not adopted" : "No binding",
+      title: "This session cannot read node reality, so only the declared intent is known.",
     };
   }
   if (row.snapshotStatus === "unknown" && !realityRead) {
@@ -133,6 +137,57 @@ export function nodeStatus(view: ExposureRowView, canSeeReality: boolean, realit
       row.coverage === "legacy"
         ? "Nothing open goes unexplained, but the legacy baseline is not adopted, so Lattice enforces nothing here."
         : "Nothing open goes unexplained, but this node is observe only, so Lattice enforces nothing here.",
+  };
+}
+
+/**
+ * Where each verdict sorts in the default order, worst first: the three that
+ * need a hand, then the warnings (evidence too old, a snapshot that could not
+ * be read, a managed node that cannot be verified), then the neutral states,
+ * then enforced. Grouped by tone, so the Status column reads top to bottom
+ * the way its dots are coloured; inside a tone, the order a node would be
+ * chased in.
+ */
+const STATUS_RANK: Record<NodeStatusKey, number> = {
+  drift: 0,
+  "apply-failed": 1,
+  unexplained: 2,
+  stale: 3,
+  "snapshot-unread": 4,
+  "never-applied": 5,
+  "no-managed-table": 6,
+  unverified: 7,
+  "never-reported": 8,
+  "reality-unread": 9,
+  reading: 10,
+  "not-judged": 11,
+  "intent-only": 12,
+  "not-enforced": 13,
+  "no-binding": 14,
+  enforced: 15,
+};
+
+export function statusRank(key: NodeStatusKey): number {
+  return STATUS_RANK[key];
+}
+
+/**
+ * The default order of the Nodes table, the one the Status header shows as
+ * sorted: by verdict rank, then, among nodes with ports no rule allows, the
+ * one with more of them first, then by name. It ranks with the same
+ * nodeStatus the column draws, so a red dot can never sit below a green one.
+ */
+export function attentionComparator(canSeeReality: boolean, realityRead: boolean): (a: ExposureRowView, b: ExposureRowView) => number {
+  return (a, b) => {
+    const left = nodeStatus(a, canSeeReality, realityRead).key;
+    const right = nodeStatus(b, canSeeReality, realityRead).key;
+    const rank = statusRank(left) - statusRank(right);
+    if (rank) return rank;
+    if (left === "unexplained") {
+      const more = b.exposure.unexplained - a.exposure.unexplained;
+      if (more) return more;
+    }
+    return a.row.nodeName.localeCompare(b.row.nodeName);
   };
 }
 

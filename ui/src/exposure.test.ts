@@ -22,6 +22,7 @@ import {
   type ExposureContext,
 } from "./exposure";
 import type { GuardListener, GuardNode, GuardNodeReality, GuardRule, GuardZone, SecurityGroup } from "./netguardModel";
+import { attentionComparator } from "./nodeStatus";
 import type { PostureRow } from "./posture";
 
 // ── fixtures ────────────────────────────────────────────────────────────────
@@ -444,13 +445,15 @@ describe("findingsFor", () => {
 });
 
 describe("ordering", () => {
-  it("opens on unexplained ports, then drift, then name", () => {
+  it("sorts a picked column by name, by how much is open, and by the oldest evidence", () => {
+    // The default order ranks by verdict and is tested with nodeStatus.
     const quiet = { row: row("b-quiet"), exposure: computeExposure(row("b-quiet"), reality([]), ctx) };
-    const drifted = { row: row("c-drift", { driftState: "drift" }), exposure: computeExposure(row("c-drift", { driftState: "drift" }), reality([]), ctx) };
+    const old = { row: row("c-old", { collectedAt: "2026-09-01T00:00:00Z" }), exposure: computeExposure(row("c-old"), reality([]), ctx) };
     const loud = { row: row("a-loud", { coverage: "unbound", driftState: "unknown" }), exposure: computeExposure(row("a-loud", { coverage: "unbound", driftState: "unknown" }), reality([listener(8080)]), ctx) };
-    const sorted = [quiet, drifted, loud].sort((a, b) => compareExposure(a, b, "attention"));
-    expect(sorted.map((item) => item.row.nodeId)).toEqual(["a-loud", "c-drift", "b-quiet"]);
     expect([quiet, loud].sort((a, b) => compareExposure(a, b, "name")).map((item) => item.row.nodeId)).toEqual(["a-loud", "b-quiet"]);
+    expect([quiet, loud].sort((a, b) => compareExposure(a, b, "open")).map((item) => item.row.nodeId)).toEqual(["a-loud", "b-quiet"]);
+    const never = { row: row("d-never", { snapshotStatus: "unknown", collectedAt: undefined }), exposure: computeExposure(row("d-never"), undefined, ctx) };
+    expect([quiet, never, old].sort((a, b) => compareExposure(a, b, "seen")).map((item) => item.row.nodeId)).toEqual(["d-never", "c-old", "b-quiet"]);
   });
 
   it("finds the newest snapshot for the proof line", () => {
@@ -464,29 +467,31 @@ describe("settled order", () => {
   // node's unexplained count is 0 until its own read returns. A live sort
   // moves the row under the pointer for the first seconds after load; the
   // page settles the order at known points and reads through the index.
-  // Three unbound nodes with no drift verdict, so the default order can only
-  // come from unexplained ports and then the name.
+  // Three unbound nodes with no drift verdict, so the default order comes
+  // from the verdict alone: a port no rule allows, then "Reading" while a
+  // snapshot is in flight, then the quiet "No binding".
   const unbound = { coverage: "unbound", driftState: "unknown" } as const;
-  const quiet = { row: row("b-quiet", unbound), exposure: computeExposure(row("b-quiet", unbound), reality([]), ctx) };
-  const pending = { row: row("c-pending", unbound), exposure: computeExposure(row("c-pending", unbound), undefined, ctx) };
-  const loud = { row: row("a-loud", unbound), exposure: computeExposure(row("a-loud", unbound), reality([listener(8080)]), ctx) };
+  const quiet = { row: row("b-quiet", unbound), exposure: computeExposure(row("b-quiet", unbound), reality([]), ctx), detail: "loaded" as const };
+  const pending = { row: row("c-pending", unbound), exposure: computeExposure(row("c-pending", unbound), undefined, ctx), detail: "pending" as const };
+  const loud = { row: row("a-loud", unbound), exposure: computeExposure(row("a-loud", unbound), reality([listener(8080)]), ctx), detail: "loaded" as const };
+  const attention = attentionComparator(true, true);
 
   it("holds a row where it was settled even after its detail arrives", () => {
-    const beforeDetails = settleOrder([quiet, pending, loud], "attention", "asc");
-    expect([...beforeDetails.keys()]).toEqual(["a-loud", "b-quiet", "c-pending"]);
+    const beforeDetails = settleOrder([quiet, pending, loud], "attention", "asc", attention);
+    expect([...beforeDetails.keys()]).toEqual(["a-loud", "c-pending", "b-quiet"]);
 
     // c-pending's snapshot lands and it turns out to be the loudest node.
-    const landed = { ...pending, exposure: computeExposure(pending.row, reality([listener(5432), listener(8080)]), ctx) };
+    const landed = { ...pending, exposure: computeExposure(pending.row, reality([listener(5432), listener(8080)]), ctx), detail: "loaded" as const };
     expect(landed.exposure.unexplained).toBeGreaterThan(loud.exposure.unexplained);
-    expect(applyOrder([quiet, landed, loud], beforeDetails).map((view) => view.row.nodeId)).toEqual(["a-loud", "b-quiet", "c-pending"]);
+    expect(applyOrder([quiet, landed, loud], beforeDetails).map((view) => view.row.nodeId)).toEqual(["a-loud", "c-pending", "b-quiet"]);
 
     // Once the fan-in completes the page settles again and it moves up.
-    const afterDetails = settleOrder([quiet, landed, loud], "attention", "asc");
+    const afterDetails = settleOrder([quiet, landed, loud], "attention", "asc", attention);
     expect(applyOrder([quiet, landed, loud], afterDetails).map((view) => view.row.nodeId)).toEqual(["c-pending", "a-loud", "b-quiet"]);
   });
 
   it("keeps a filtered subset in settled order and appends nodes the index has not seen by name", () => {
-    const order = settleOrder([quiet, pending, loud], "name", "desc");
+    const order = settleOrder([quiet, pending, loud], "name", "desc", attention);
     expect([...order.keys()]).toEqual(["c-pending", "b-quiet", "a-loud"]);
     expect(applyOrder([loud, quiet], order).map((view) => view.row.nodeId)).toEqual(["b-quiet", "a-loud"]);
     const newcomer = { row: row("d-new"), exposure: computeExposure(row("d-new"), reality([]), ctx) };

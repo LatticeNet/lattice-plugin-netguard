@@ -33,7 +33,7 @@ import type {
   SecurityGroup,
 } from "../src/netguardModel";
 
-export const SCENARIOS = ["fleet", "empty", "readonly", "failing"] as const;
+export const SCENARIOS = ["fleet", "empty", "readonly", "intentonly", "failing"] as const;
 export type Scenario = (typeof SCENARIOS)[number];
 
 const SERVICE = "latticenet.netguard/firewall";
@@ -44,6 +44,10 @@ export const INTERFACES: Record<Scenario, { service: string; methods: string[] }
   fleet: [{ service: SERVICE, methods: [...READ, ...WRITE] }],
   empty: [{ service: SERVICE, methods: [...READ, ...WRITE] }],
   readonly: [{ service: SERVICE, methods: READ }],
+  // A token scoped to intent: it reads the overview but not reality or
+  // review, so drift and open ports are unknown and only the failed apply on
+  // lax-exit-02 (in its binding) needs attention.
+  intentonly: [{ service: SERVICE, methods: ["overview"] }],
   failing: [{ service: SERVICE, methods: [...READ, ...WRITE] }],
 };
 

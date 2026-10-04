@@ -123,14 +123,18 @@ function exposureTitle(view: ExposureRowView): string {
   return `${open}${confined}`;
 }
 
+/* A session without the reality and review methods never asked when a node
+   last reported, so its rows say the age is not readable, not "never". */
 function seenLabel(view: ExposureRowView): string {
   const { row } = view;
+  if (!props.canSeeReality) return "not readable";
   if (row.snapshotStatus === "unknown") return props.realityRead ? "never" : "not read";
   return `${ageLabel(row.collectedAt, props.now)} ago`;
 }
 
 function seenTitle(view: ExposureRowView): string {
   const { row } = view;
+  if (!props.canSeeReality) return "This session cannot read node reality, so when this node last reported is not known.";
   if (row.snapshotStatus === "unknown") return props.realityRead ? "No snapshot has ever arrived from this node's agent." : "The reality read failed, so when this node last reported is not known.";
   const stamp = stampUtc(row.collectedAt);
   return row.snapshotStatus === "stale"

@@ -9,15 +9,9 @@
  * rather than switching between panels. Only the checked option is in the Tab
  * order; ArrowLeft, ArrowRight, Home and End move the choice and the focus.
  */
-import { PcCount, type CountTone } from "@latticenet/plugin-bridge/chassis";
+import { PcCount } from "@latticenet/plugin-bridge/chassis";
 
-export interface FilterOption<V extends string> {
-  value: V;
-  label: string;
-  /** Absent until the rows have been read; never a zero nobody counted. */
-  count: number | null;
-  tone?: CountTone;
-}
+import type { FilterOption } from "../viewState";
 
 const props = defineProps<{ modelValue: T; options: readonly FilterOption<T>[]; label: string }>();
 const emit = defineEmits<{ (event: "update:modelValue", value: T): void }>();
