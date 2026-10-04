@@ -9,6 +9,8 @@
  * (the attention list opens it), and `expand=<id>` or `node=<id>` opens that
  * node's panel.
  */
+import type { CountTone } from "@latticenet/plugin-bridge/chassis";
+
 import { PAGE_STATE_MAX_VALUE_LENGTH, putState, type PageState } from "./pageState";
 
 export type NgView = "overview" | "nodes" | "groups" | "zones";
@@ -17,6 +19,45 @@ export const NG_VIEWS: readonly NgView[] = ["overview", "nodes", "groups", "zone
 /** The Nodes filter: every node, or only the ones the attention list names. */
 export type NodeFilter = "all" | "attention";
 export const NODE_FILTERS: readonly NodeFilter[] = ["all", "attention"];
+
+/** One option of a segmented filter (FilterSwitch.vue) with its count. */
+export interface FilterOption<V extends string> {
+  value: V;
+  label: string;
+  /** Absent until the rows have been read; never a zero nobody counted. */
+  count: number | null;
+  tone?: CountTone;
+}
+
+/**
+ * The Nodes filter's two options. A count is printed only when what it
+ * counts was read: All needs the reality roster, and Needs attention needs
+ * reality (drift and open ports) as well as the rules (which ports no rule
+ * allows). A session that cannot read reality would otherwise see only its
+ * failed applies counted, and read that number as the whole answer. The
+ * count turns red only when there is something to count.
+ */
+export function nodeFilterOptions(input: {
+  /** The page is still loading, or never connected: no count is known. */
+  pending: boolean;
+  total: number;
+  attention: number;
+  canSeeReality: boolean;
+  realityFailed: boolean;
+  overviewFailed: boolean;
+}): FilterOption<NodeFilter>[] {
+  const totalKnown = !input.pending && !input.realityFailed;
+  const attentionKnown = totalKnown && input.canSeeReality && !input.overviewFailed;
+  return [
+    { value: "all", label: "All", count: totalKnown ? input.total : null },
+    {
+      value: "attention",
+      label: "Needs attention",
+      count: attentionKnown ? input.attention : null,
+      tone: attentionKnown && input.attention > 0 ? "error" : undefined,
+    },
+  ];
+}
 
 export interface NgPageState {
   view: NgView;

@@ -65,6 +65,7 @@ const tableProps = (rows: ExposureRowView[]) => ({
   ignored: new Set<string>(),
   now: Date.parse("2026-09-30T10:00:41Z"),
   canSeeReality: true,
+  realityRead: true,
 });
 
 describe("the Nodes table, rendered", () => {
@@ -73,6 +74,46 @@ describe("the Nodes table, rendered", () => {
     expect(html.match(/class="ng-span-open"/g)).toHaveLength(4);
     expect(html).toContain("open with no rule allowing it");
     expect(html).toContain("41s ago");
+  });
+
+  it("puts each row's verdict before its ports, and the ports no rule allows first", async () => {
+    const html = (await render(ExposureTable, tableProps(views(true)))).replace(/<!--[^>]*-->/g, "");
+    // Twice per row: the Status cell, and the narrow status line under the
+    // name that takes its place between 480 and 720px (CSS shows one).
+    expect(html.match(/2 ports, no rule/g)).toHaveLength(4);
+    expect(html.match(/class="pc-narrow-status"/g)).toHaveLength(2);
+    // Both rows need attention, and both carry the marker.
+    expect(html.match(/data-attention="true"/g)).toHaveLength(2);
+    expect(html.indexOf("2 ports, no rule")).toBeLessThan(html.indexOf('class="ng-span-open"'));
+    // 22 and 5432 are both unexplained here, so both are flagged and nothing is printed as allowed.
+    expect(html).not.toContain('class="ng-span-allowed"');
+    // The id is the name here, so it is not printed a second time under it.
+    expect(html).not.toMatch(/<small[^>]*>cd-build-1<\/small>/);
+  });
+
+  it("says a snapshot was not read, not that the node never reported, after a failed reality read", async () => {
+    const unread = ["cd-build-1"].map((id) => {
+      const r = row(id, { snapshotStatus: "unknown", collectedAt: undefined });
+      return { row: r, exposure: computeExposure(r, undefined, empty, undefined, true), detail: "loaded" as const };
+    });
+    const html = await render(ExposureTable, { ...tableProps(unread), realityRead: false });
+    expect(html).toContain(">Not read<");
+    expect(html).toContain(">not read<");
+    expect(html).not.toContain("Never reported");
+    expect(html).not.toContain(">never<");
+  });
+
+  it("tells a session that cannot read reality that the age is not readable, and still names a failed apply", async () => {
+    const intentOnly = ["cd-build-1", "cd-lab-1"].map((id) => {
+      const r = row(id, { snapshotStatus: "unknown", collectedAt: undefined, coverage: "managed", ...(id === "cd-lab-1" ? { lastError: "nft: exit 1" } : {}) });
+      return { row: r, exposure: computeExposure(r, undefined, empty, undefined, true), detail: "pending" as const };
+    });
+    const html = await render(ExposureTable, { ...tableProps(intentOnly), canSeeReality: false });
+    expect(html.match(/>not readable</g)).toHaveLength(2);
+    expect(html).not.toContain(">never<");
+    expect(html).toContain("Apply failed");
+    expect(html).toContain("The last apply failed: nft: exit 1");
+    expect(html.match(/data-attention="true"/g)).toHaveLength(1);
   });
 
   it("draws no port as unexplained and no binding as none when the rules were not read", async () => {

@@ -1,16 +1,26 @@
 <script setup lang="ts">
 /**
- * One row per node: what is open to the internet, who manages it, whether the
- * live table still matches, and how old the evidence is.
+ * One row per node, one line per row: the node, its verdict, what it has open
+ * to the internet, who governs it, and how old the evidence is.
+ *
+ * The Status column is the row's answer to "does this node need me"
+ * (nodeStatus.ts), at the left edge where the eye starts, so the port list
+ * no longer has to carry the verdict in red marks of its own. A port no rule
+ * allows is drawn as a small flagged token, first in the list: the token's
+ * fill and border say "nothing allows this" without relying on colour alone,
+ * and a screen reader hears it in words. Allowed ports are plain text; a port
+ * that could not be judged is muted with a "?". Confined ports (knock gated,
+ * bound to one zone) follow as one quiet phrase.
  *
  * The row has one click target, the node's panel, and one menu for the
  * actions that do not need the panel open. Nothing is invented for a node
- * that has not reported: its exposure reads "unknown" with the reason, never
- * "nothing open". The columns stay at every width; below 720px the node
- * column pins to the left edge and the table scrolls sideways under it.
- *
- * A port the node's knock table gates is confined, not open: it prints as a
- * "gated" chip under the open list rather than as a red unexplained mark.
+ * that has not reported: its port cell says "unknown", never "nothing open".
+ * From 480 to 720px the node column pins to the left edge and the verdict
+ * moves into it, on a second line under the name (the chassis's narrow
+ * status line), so it stays on screen while the rest of the row scrolls
+ * sideways; the Status column steps aside there. Below 480px the row folds
+ * into lines (node and menu, then the verdict, then the ports, wrapped) so a
+ * phone shows every node's verdict and every port without scrolling sideways.
  *
  * After a failed overview read no port is judged against the rules: each
  * open one prints as unknown with that reason, and Managed by says the
@@ -18,38 +28,15 @@
  */
 import { computed } from "vue";
 
-import {
-  PcActionsCell,
-  PcKindChip,
-  PcRow,
-  PcStatePill,
-  PcTable,
-  PcTd,
-  PcTh,
-  type SortState,
-} from "@latticenet/plugin-bridge/chassis";
+import { PcActionsCell, PcRow, PcStateDot, PcTable, PcTd, PcTh, type SortState } from "@latticenet/plugin-bridge/chassis";
 
-import {
-  KNOCK_SCOPE,
-  describeScopes,
-  formatProcesses,
-  formatSpan,
-  formatSpans,
-  type ConfinedSpan,
-  type ExposureSortKey,
-  type OpenSpan,
-} from "../exposure";
-import {
-  driftLabel,
-  driftShortReason,
-  driftToneFor,
-  driftUnknownReason,
-  type PostureRow,
-} from "../posture";
+import { describeScopes, formatProcesses, formatSpan, formatSpans, type ExposureSortKey, type OpenSpan } from "../exposure";
+import { idAddsInformation } from "../identity";
+import { confinedPhrase, managedCell, nodeStatus, orderedOpen } from "../nodeStatus";
 import type { ExposureRowView } from "../overview";
+import type { PostureRow } from "../posture";
 import type { MenuItem } from "../rowMenu";
 import { ageLabel, stampUtc } from "../time";
-import { stateTone } from "../tones";
 import RowMenu from "./RowMenu.vue";
 
 const props = defineProps<{
@@ -62,10 +49,11 @@ const props = defineProps<{
   menuFor: (row: PostureRow) => MenuItem[];
   /** Finding keys the operator dismissed for this session. */
   ignored: ReadonlySet<string>;
-  /** The instant the page fetched, which every age here is measured against. */
   /** Now, for the Seen ages. */
   now: number;
   canSeeReality: boolean;
+  /** False when the session may read reality but the read failed. */
+  realityRead: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -74,8 +62,25 @@ const emit = defineEmits<{
   (event: "action", key: string, nodeId: string): void;
 }>();
 
+/**
+ * Each row's cells, worked out once per render rather than once per binding:
+ * the verdict, the Managed by line, the ports in reading order, the confined
+ * phrase, the menu, and whether the id says anything the name does not.
+ */
+const lines = computed(() =>
+  props.rows.map((view) => ({
+    view,
+    status: nodeStatus(view, props.canSeeReality, props.realityRead),
+    managed: managedCell(view),
+    open: orderedOpen(view.exposure.open),
+    confined: confinedPhrase(view.exposure.confined),
+    menu: props.menuFor(view.row),
+    showId: idAddsInformation(view.row.nodeName, view.row.nodeId),
+  })),
+);
+
 /** A menu column only when some row has something in it. */
-const hasMenus = computed(() => props.rows.some((view) => props.menuFor(view.row).length > 0));
+const hasMenus = computed(() => lines.value.some((line) => line.menu.length > 0));
 
 /** A click anywhere on the row opens it; the name button is where focus lands, so closing the panel hands focus back to it. */
 function openRow(event: MouseEvent, nodeId: string): void {
@@ -110,15 +115,6 @@ function spanTitle(span: OpenSpan, rulesRead: boolean): string {
   return `${formatSpan(span)}/${span.protocol}${owner ? ` (${owner})` : ""}: ${verdict}`;
 }
 
-function isGated(span: ConfinedSpan): boolean {
-  return span.scopes.includes(KNOCK_SCOPE);
-}
-
-function confinedTitle(span: ConfinedSpan): string {
-  const owner = formatProcesses(span);
-  return `${formatSpan(span)}${owner ? ` (${owner})` : ""}: reachable only through ${describeScopes(span.scopes)}`;
-}
-
 /** The whole cell as one sentence, for the title of a truncated cell. */
 function exposureTitle(view: ExposureRowView): string {
   const { exposure } = view;
@@ -129,73 +125,49 @@ function exposureTitle(view: ExposureRowView): string {
   return `${open}${confined}`;
 }
 
-function managedLabel(view: ExposureRowView): string {
-  if (!view.exposure.rulesRead) return "not read";
-  const managed = view.exposure.managedBy;
-  if (managed.kind === "legacy") return "legacy rules";
-  if (managed.kind === "groups") return managed.names.join(", ");
-  return "none";
-}
-
-/** The one qualifier that turns the group list into the truth about enforcement. */
-function managedNote(view: ExposureRowView): string {
-  const { row } = view;
-  if (!view.exposure.rulesRead) return row.lastError ? "apply failed" : "";
-  if (row.coverage === "observe_only") return "observe only";
-  if (row.coverage === "legacy") return "not adopted";
-  if (row.coverage === "unbound") return "no binding";
-  if (row.lastError) return "apply failed";
-  if (!row.lastAppliedAt) return "never applied";
-  return "";
-}
-
-function driftTitle(row: PostureRow): string {
-  if (row.driftState === "drift") return "The managed table on this node no longer matches the ruleset Lattice applied.";
-  if (row.driftState === "unknown") return driftUnknownReason(row);
-  return "The live managed table matches the ruleset Lattice applied.";
-}
-
+/* A session without the reality and review methods never asked when a node
+   last reported, so its rows say the age is not readable, not "never". */
 function seenLabel(view: ExposureRowView): string {
   const { row } = view;
-  if (row.snapshotStatus === "unknown") return "never";
+  if (!props.canSeeReality) return "not readable";
+  if (row.snapshotStatus === "unknown") return props.realityRead ? "never" : "not read";
   return `${ageLabel(row.collectedAt, props.now)} ago`;
 }
 
 function seenTitle(view: ExposureRowView): string {
   const { row } = view;
-  if (row.snapshotStatus === "unknown") return "No snapshot has ever arrived from this node's agent.";
+  if (!props.canSeeReality) return "This session cannot read node reality, so when this node last reported is not known.";
+  if (row.snapshotStatus === "unknown") return props.realityRead ? "No snapshot has ever arrived from this node's agent." : "The reality read failed, so when this node last reported is not known.";
   const stamp = stampUtc(row.collectedAt);
   return row.snapshotStatus === "stale"
     ? `Last snapshot ${stamp}, older than the server trusts.`
     : `Snapshot collected ${stamp}.`;
 }
-
 </script>
 
 <template>
   <!-- 880, not 1000: the floor has to clear a 1024 frame less the workspace
        padding and the card border, or the wrap scrolls sideways with its only
-       scrollbar under the last row. Below that the wrap scrolls sideways and
-       the node column stays pinned. `stacked` is off: rows are compared, so
-       they keep their columns at 375 instead of turning into cards. -->
-  <PcTable class="ng-exposure-table" :min-width="880" :stacked="false" label="Exposure by node">
+       scrollbar under the last row. Between 480 and 720 the wrap scrolls
+       sideways under the pinned node column; below 480 the rows fold. -->
+  <PcTable class="ng-exposure-table" :min-width="880" label="Exposure by node">
     <template #head>
       <PcTh name sortable :sort="sortFor('name')" @sort="emit('sort', 'name')">Node</PcTh>
-      <PcTh class="ng-th-exposure" sortable :sort="sortFor('open')" @sort="emit('sort', 'open')">Exposure</PcTh>
+      <PcTh class="ng-th-status" sortable :sort="sortFor('attention')" @sort="emit('sort', 'attention')">Status</PcTh>
+      <PcTh class="ng-th-exposure" sortable :sort="sortFor('open')" @sort="emit('sort', 'open')">Open to the internet</PcTh>
       <PcTh sortable :sort="sortFor('managed')" @sort="emit('sort', 'managed')">Managed by</PcTh>
-      <PcTh sortable :sort="sortFor('drift')" @sort="emit('sort', 'drift')">Drift</PcTh>
-      <PcTh sortable :sort="sortFor('seen')" @sort="emit('sort', 'seen')">Seen</PcTh>
+      <PcTh class="ng-th-seen" sortable :sort="sortFor('seen')" @sort="emit('sort', 'seen')">Seen</PcTh>
       <PcTh v-if="hasMenus" actions><span class="pc-sr-only">Actions</span></PcTh>
     </template>
 
     <tbody>
       <PcRow
-        v-for="view in rows"
+        v-for="{ view, status, managed, open, confined, menu, showId } in lines"
         :id="`node-${view.row.nodeId}`"
         :key="view.row.nodeId"
         class="ng-click-row"
         :selected="activeId === view.row.nodeId"
-        :data-attention="view.exposure.unexplained > 0 || view.row.driftState === 'drift' ? 'true' : undefined"
+        :data-attention="status.tone === 'error' ? 'true' : undefined"
         @click="openRow($event, view.row.nodeId)"
       >
         <td class="pc-name" data-stack="name">
@@ -203,86 +175,68 @@ function seenTitle(view: ExposureRowView): string {
             <button
               class="ng-row-open"
               type="button"
-              :title="`Open ${view.row.nodeName}`"
+              :title="`Open ${view.row.nodeName} (${view.row.nodeId})`"
               :aria-current="activeId === view.row.nodeId ? 'true' : undefined"
               @click.stop="openRow($event, view.row.nodeId)"
             >{{ view.row.nodeName }}</button>
           </div>
-          <small :title="view.row.nodeId">{{ view.row.nodeId }}</small>
+          <small v-if="showId" :title="view.row.nodeId">{{ view.row.nodeId }}</small>
+          <span class="pc-narrow-status"><PcStateDot :tone="status.tone" :label="status.label" :title="status.title" /></span>
         </td>
 
-        <PcTd label="Exposure" stack="summary" :title="exposureTitle(view)">
+        <PcTd label="Status" stack="state" class="ng-status-cell">
+          <PcStateDot :tone="status.tone" :label="status.label" :title="status.title" />
+        </PcTd>
+
+        <PcTd label="Open to the internet" stack="summary" :title="exposureTitle(view)">
           <span class="ng-exposure">
             <template v-if="!canSeeReality">
               <span class="ng-absent">not readable by this session</span>
             </template>
             <template v-else-if="view.row.snapshotStatus === 'unknown'">
-              <span class="ng-absent">unknown, never reported</span>
+              <span class="ng-absent">unknown</span>
             </template>
             <template v-else-if="view.detail === 'failed'">
-              <span class="ng-warn-text">unknown, snapshot could not be read</span>
+              <span class="ng-absent">unknown, snapshot could not be read</span>
             </template>
             <template v-else-if="view.detail === 'pending'">
               <span class="ng-absent">reading snapshot</span>
             </template>
             <template v-else-if="view.exposure.evidence === 'stale'">
-              <span class="ng-warn-text">unknown, no snapshot since {{ stampUtc(view.exposure.collectedAt) }}</span>
-              <small v-if="view.exposure.open.length">last seen: {{ formatSpans(view.exposure.open) }}</small>
+              <span class="ng-absent">{{ view.exposure.open.length ? `last seen ${formatSpans(view.exposure.open)}` : 'unknown' }}</span>
             </template>
             <template v-else>
-              <span v-if="!view.exposure.open.length" class="ng-absent" title="No listener binds a non-loopback address.">nothing</span>
-              <span v-else class="ng-spans">
-                <template v-for="(span, index) in view.exposure.open" :key="span.protocol + span.from">
-                  <span v-if="index" class="ng-span-sep">, </span>
-                  <span
-                    v-if="span.verdict === 'unexplained'"
-                    class="ng-span-open"
-                    :data-ignored="ignored.has(findingKey(view.row.nodeId, span)) ? 'true' : undefined"
-                    :title="ignored.has(findingKey(view.row.nodeId, span)) ? `${spanTitle(span, true)}; ignored for this session` : spanTitle(span, true)"
-                  >
-                    {{ formatSpan(span) }}<span aria-hidden="true"> (!)</span>
-                    <span class="pc-sr-only">, open with no rule allowing it</span>
-                  </span>
-                  <span v-else-if="span.verdict === 'unknown'" class="ng-span-unknown" :title="spanTitle(span, view.exposure.rulesRead)">
-                    {{ formatSpan(span) }}<span aria-hidden="true"> (?)</span>
-                    <span class="pc-sr-only">{{ view.exposure.rulesRead ? ', bind address not reported' : ', not judged: the rules were not read' }}</span>
-                  </span>
-                  <span v-else class="ng-span-allowed" :title="spanTitle(span, true)">{{ formatSpan(span) }}</span>
-                </template>
-              </span>
-              <span v-if="view.exposure.confined.length" class="ng-confined">
-                <template v-for="span in view.exposure.confined" :key="'c' + span.protocol + span.from">
-                  <PcKindChip v-if="isGated(span)" :title="confinedTitle(span)">{{ formatSpan(span) }} gated</PcKindChip>
-                  <PcKindChip v-else-if="span.bindZone" :title="confinedTitle(span)">{{ formatSpan(span) }} {{ span.bindZone }}</PcKindChip>
-                  <span v-else class="ng-confined-item" :title="confinedTitle(span)">{{ formatSpan(span) }}: {{ describeScopes(span.scopes) }}</span>
-                </template>
-              </span>
+              <span v-if="!view.exposure.open.length" class="ng-absent" title="No listener binds a non-loopback address.">nothing open</span>
+              <template v-for="span in open" :key="span.protocol + span.from">
+                <span
+                  v-if="span.verdict === 'unexplained'"
+                  class="ng-span-open"
+                  :data-ignored="ignored.has(findingKey(view.row.nodeId, span)) ? 'true' : undefined"
+                  :title="ignored.has(findingKey(view.row.nodeId, span)) ? `${spanTitle(span, true)}; ignored for this session` : spanTitle(span, true)"
+                >{{ formatSpan(span) }}<span class="pc-sr-only">, open with no rule allowing it</span></span>
+                <span v-else-if="span.verdict === 'unknown'" class="ng-span-unknown" :title="spanTitle(span, view.exposure.rulesRead)"
+                  >{{ formatSpan(span) }}<span aria-hidden="true">?</span><span class="pc-sr-only">{{ view.exposure.rulesRead ? ', bind address not reported' : ', not judged: the rules were not read' }}</span></span
+                >
+                <span v-else class="ng-span-allowed" :title="spanTitle(span, true)">{{ formatSpan(span) }}</span>
+              </template>
+              <span v-if="confined" class="ng-confined">{{ confined }}</span>
             </template>
           </span>
         </PcTd>
 
-        <PcTd label="Managed by" :title="managedLabel(view)">
-          <span :class="view.exposure.managedBy.kind === 'none' || !view.exposure.rulesRead ? 'ng-absent' : 'pc-mono'">{{ managedLabel(view) }}</span>
-          <small v-if="managedNote(view)" :class="view.row.lastError ? 'pc-danger-text' : undefined">{{ managedNote(view) }}</small>
+        <PcTd label="Managed by" stack="state" class="ng-managed-cell" :title="[managed.names, managed.note].filter(Boolean).join(', ')">
+          <span class="ng-managed-line">
+            <span :class="managed.absent ? 'ng-absent' : undefined">{{ managed.names }}</span>
+            <span v-if="managed.note" class="ng-managed-note">{{ managed.note }}</span>
+          </span>
         </PcTd>
 
-        <PcTd label="Drift" stack="state">
-          <PcStatePill :tone="stateTone(driftToneFor(view.row.driftState))" :label="driftLabel(view.row.driftState)" :title="driftTitle(view.row)" />
-          <small v-if="driftShortReason(view.row)" :class="view.row.driftState === 'drift' ? 'pc-danger-text' : undefined">{{ driftShortReason(view.row) }}</small>
-        </PcTd>
-
-        <PcTd label="Seen" mono :title="seenTitle(view)">
-          <span :class="view.row.snapshotStatus === 'stale' ? 'ng-warn-text' : view.row.snapshotStatus === 'unknown' ? 'ng-absent' : undefined">{{ seenLabel(view) }}</span>
-          <small v-if="view.row.snapshotStatus === 'stale'" class="ng-warn-text">stale</small>
+        <PcTd label="Seen" stack="state" class="ng-seen-cell" :title="seenTitle(view)">
+          <span :data-snapshot="view.row.snapshotStatus">{{ seenLabel(view) }}</span>
         </PcTd>
 
         <PcActionsCell v-if="hasMenus">
-          <RowMenu
-            v-if="menuFor(view.row).length"
-            :label="`Actions for ${view.row.nodeName}`"
-            :items="menuFor(view.row)"
-            @select="(key) => emit('action', key, view.row.nodeId)"
-          />
+          <RowMenu v-if="menu.length" :label="`Actions for ${view.row.nodeName}`" :items="menu" @select="(key) => emit('action', key, view.row.nodeId)" />
         </PcActionsCell>
       </PcRow>
     </tbody>

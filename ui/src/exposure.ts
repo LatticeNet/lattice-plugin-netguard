@@ -870,26 +870,28 @@ export function draftRuleFor(finding: Finding): GuardRule {
 
 // ── ordering and counts ─────────────────────────────────────────────────────
 
-export type ExposureSortKey = "attention" | "name" | "open" | "managed" | "drift" | "seen";
+/**
+ * "attention" is the default order, the one the Status header shows as
+ * sorted. It ranks by each row's verdict, which needs the snapshot read state
+ * and what the session may read, so the page passes it in (nodeStatus.ts
+ * attentionComparator) instead of this module deriving a second verdict.
+ */
+export type ExposureSortKey = "attention" | "name" | "open" | "managed" | "seen";
 
 const managedRank: Record<ManagedBy["kind"], number> = { groups: 0, legacy: 1, none: 2 };
-const driftRank: Record<PostureRow["driftState"], number> = { drift: 0, unknown: 1, in_sync: 2 };
 
-function timeValue(value: string | undefined): number {
-  if (!value) return Number.POSITIVE_INFINITY;
+/** When a snapshot was collected; a node with no readable time sorts as the oldest of all. */
+function collectedValue(value: string | undefined): number {
+  if (!value) return Number.NEGATIVE_INFINITY;
   const parsed = Date.parse(value);
-  return Number.isNaN(parsed) ? Number.POSITIVE_INFINITY : parsed;
+  return Number.isNaN(parsed) ? Number.NEGATIVE_INFINITY : parsed;
 }
 
-/**
- * Default order: the nodes with unexplained open ports first, then drifted,
- * then the rest by name. A panel that answers "what is open" has to open on
- * the answer.
- */
+/** The orders a column header picks; settleOrder takes the default order as an argument. */
 export function compareExposure(
   a: { row: PostureRow; exposure: NodeExposure },
   b: { row: PostureRow; exposure: NodeExposure },
-  key: ExposureSortKey,
+  key: Exclude<ExposureSortKey, "attention">,
 ): number {
   switch (key) {
     case "name":
@@ -898,17 +900,13 @@ export function compareExposure(
       return b.exposure.open.length - a.exposure.open.length;
     case "managed":
       return managedRank[a.exposure.managedBy.kind] - managedRank[b.exposure.managedBy.kind];
-    case "drift":
-      return driftRank[a.row.driftState] - driftRank[b.row.driftState];
-    case "seen":
-      // Oldest evidence first: the node nobody has heard from is the one to chase.
-      return timeValue(b.row.collectedAt) - timeValue(a.row.collectedAt);
-    default: {
-      const unexplained = b.exposure.unexplained - a.exposure.unexplained;
-      if (unexplained) return unexplained;
-      const drift = driftRank[a.row.driftState] - driftRank[b.row.driftState];
-      if (drift) return drift;
-      return a.row.nodeName.localeCompare(b.row.nodeName);
+    case "seen": {
+      // Oldest evidence first, a node that never reported before all of them:
+      // the node nobody has heard from is the one to chase. Compared, not
+      // subtracted, because two never-reported nodes are -Infinity apart.
+      const left = collectedValue(a.row.collectedAt);
+      const right = collectedValue(b.row.collectedAt);
+      return left === right ? 0 : left < right ? -1 : 1;
     }
   }
 }
@@ -917,20 +915,22 @@ export function compareExposure(
  * The display order as a settled index, id to position. The page settles it at
  * known points (the list painted, the snapshot fan-in complete, the operator
  * sorted) and reads rows through it in between, because the default order
- * ranks by unexplained ports and every node reports 0 of those until its own
+ * ranks by each row's verdict and every node reads as "Reading" until its own
  * detail call returns: a live sort reshuffles the table under the pointer for
  * the first seconds after load, which in a panel whose rows apply a firewall
  * is how the wrong node gets opened.
  */
 export type OrderIndex = ReadonlyMap<string, number>;
 
-export function settleOrder(
-  views: readonly { row: PostureRow; exposure: NodeExposure }[],
+export function settleOrder<T extends { row: PostureRow; exposure: NodeExposure }>(
+  views: readonly T[],
   key: ExposureSortKey,
   direction: "asc" | "desc",
+  attention: (a: T, b: T) => number,
 ): Map<string, number> {
   const factor = direction === "desc" ? -1 : 1;
-  const sorted = [...views].sort((a, b) => compareExposure(a, b, key) * factor || a.row.nodeId.localeCompare(b.row.nodeId));
+  const compare = key === "attention" ? attention : (a: T, b: T) => compareExposure(a, b, key);
+  const sorted = [...views].sort((a, b) => compare(a, b) * factor || a.row.nodeId.localeCompare(b.row.nodeId));
   return new Map(sorted.map((view, index) => [view.row.nodeId, index]));
 }
 

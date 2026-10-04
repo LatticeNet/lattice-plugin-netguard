@@ -56,6 +56,8 @@ let calls: Call[] = [];
 /** The type of every message the page posted to the host. */
 let posted: string[] = [];
 let app: VueApp | undefined;
+/** The methods the stand-in host grants; a test may narrow them before it mounts the page. */
+let methods: string[] = [];
 
 function fromHost(data: Record<string, unknown>): void {
   window.dispatchEvent(new MessageEvent("message", { data: { nonce: NONCE, ...data }, origin: HOST, source: window }));
@@ -83,6 +85,7 @@ async function settle(): Promise<void> {
 }
 
 beforeEach(() => {
+  methods = ["overview", "reality", "review"];
   vi.useFakeTimers();
   vi.setSystemTime(new Date("2026-09-30T10:00:00Z"));
   window.location.hash = `#lattice_nonce=${NONCE}&host_origin=${encodeURIComponent(HOST)}`;
@@ -104,7 +107,7 @@ beforeEach(() => {
           locale: "en",
           colorScheme: "dark",
           designTokens: {},
-          interfaces: [{ service: SERVICE, methods: ["overview", "reality", "review"] }],
+          interfaces: [{ service: SERVICE, methods }],
           pageState: {},
         }),
       );
@@ -115,11 +118,14 @@ beforeEach(() => {
       queueMicrotask(() => fromHost({ type: "lattice.host.result", id: data.id, result: answer(call) }));
     }
   });
+});
+
+function mountPage(): void {
   const root = document.createElement("div");
   document.body.append(root);
   app = createApp(App);
   app.mount(root);
-});
+}
 
 afterEach(() => {
   app?.unmount();
@@ -131,6 +137,7 @@ afterEach(() => {
 
 describe("the mounted page's reads", () => {
   it("reads once on open, nothing more on its own, and again on Refresh, and never reports a height", async () => {
+    mountPage();
     await settle();
     expect(tally()).toEqual({ overview: 1, "reality list": 1, "reality detail": 1 });
     expect(document.body.textContent).toContain("22/tcp");
@@ -145,5 +152,16 @@ describe("the mounted page's reads", () => {
     await settle();
     expect(tally()).toEqual({ overview: 2, "reality list": 2, "reality detail": 2 });
     expect(posted).not.toContain("lattice.plugin.resize");
+  });
+
+  it("claims no node never reported to a session that cannot read reality", async () => {
+    methods = ["overview"];
+    mountPage();
+    await settle();
+    expect(tally()).toEqual({ overview: 1 });
+    const text = document.body.textContent ?? "";
+    expect(text).toContain("reality not readable");
+    expect(text).toContain("1 node declared");
+    expect(text).not.toContain("never reported");
   });
 });
