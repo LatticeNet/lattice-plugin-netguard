@@ -1025,15 +1025,6 @@ ul {
   color: var(--foreground);
 }
 
-/* Overlays are fixed to the frame. The workspace spaces its children with a
-   top margin, and that margin also moved the fixed side panel and the modal
-   scrim 16px down from the frame's top edge, leaving a strip of page between
-   the console header and the panel. The chassis owns this rule once the
-   bridge carries it. */
-.pc-workspace > .pc-overlay {
-  margin-top: 0;
-}
-
 /* ── the node panel ─────────────────────────────────────────────────────── */
 
 /* A node NetGuard does not manage: its state, in the panel's own voice. */
