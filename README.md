@@ -26,12 +26,13 @@ The page renders on the shared plugin chassis, `@latticenet/plugin-bridge/chassi
 the same header, tabs, table card, chips and overlays as the other plugin
 frames, on the token contract the console publishes. `ui/src/styles.css` adds
 only what NetGuard alone needs. `ui/package.json` pins
-`@latticenet/plugin-bridge` `0.2.0-alpha.1` from the package registry (GitHub
-Packages, `ui/.npmrc`), the first release whose client passes `pageState` and
-sends the page state back, and whose chassis carries the layer row, the
-non-modal side panel and the table fixes this page used to patch. That version
-resolves once the bridge release is published; until then `npm ci` cannot
-install it.
+`@latticenet/plugin-bridge` `0.2.0-alpha.2` from the package registry (GitHub
+Packages, `ui/.npmrc`), and the lock holds it to the published tarball and its
+integrity. Its client passes `pageState` and sends the page state back; its
+chassis carries the layer row, the non-modal side panel and the table fixes
+this page used to patch, starts the side panel and the modal at the frame's
+top edge, and draws the side panel's header the way the console draws a
+sheet's.
 
 - **Overview** (the default): what needs a hand first (ports open to the
   internet that no rule explains, named with their owners; nodes whose live
