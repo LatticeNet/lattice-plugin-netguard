@@ -18,7 +18,7 @@ covers (`observed 03:52:10Z, 41s ago · 33 nodes report · 2 stale · 1 never
 reported`). A read that failed prints no count: the proof line says what was
 not read, and a number or tab count it would have fed says "unknown" or
 nothing, never the zero an empty join produces. The layer, the open node, the
-search and the Nodes filter live in the console's address (design 22 page
+query and the Nodes filter live in the console's address (design 22 page
 state), so a reload or a pasted link lands on the same place; old `?lens=` and
 `?expand=` links still land.
 
@@ -43,7 +43,7 @@ sort syntax in `@latticenet/plugin-bridge/query`, and `PcQueryBar` and
   unexplained ports, drift, observe only. Then one picture: every port the
   fleet has open to the internet, how many nodes open it and how many of those
   no rule explains, drawn only from fresh snapshots that were read; a port
-  opens Nodes on its exact search (`port:22/tcp`), which lists the nodes that
+  opens Nodes on its exact query (`port:22/tcp`), which lists the nodes that
   row counted. A failed overview read leaves ports unjudged: no port is
   called unexplained, the picture is not drawn, and drift, which the server
   computes, stays.
@@ -84,6 +84,28 @@ sort syntax in `@latticenet/plugin-bridge/query`, and `PcQueryBar` and
 - **Zones:** interfaces and CIDRs accepted before any security group is
   evaluated, with how many nodes trust each. This is how a management path
   stays open.
+
+Nodes, Groups and Zones each take the console's list query in one field above
+the list (`PcQueryBar`): space-separated terms that must all match, `OR`,
+parentheses, `-term` to leave rows out, `field:value`, comparisons such as
+`unexplained>0` or `seen>1h`, `is:flag`, and `sort:field` or `sort:-field`.
+The fields are each list's own, read from what its table shows
+(`ui/src/listQueries.ts`). Nodes has `status` (the Status column's verdict:
+`drifted`, `apply_failed`, `no_rule`, `stale`, `never_reported` and the rest,
+sorted worst first), `coverage`, `drift`, `snapshot`, `group`, `zone`, `port`
+(exact, as the Overview's picture counts it), `process`, `unexplained`,
+`open`, `foreign`, `seen`, `applied`, the flags `is:attention`, `is:drifted`,
+`is:failed` and `is:enforced`, and the console's shared `name` and `id`; the
+plugin contract carries no online state, address or agent report, so the rest
+of the console's node fields are not offered. Groups has `name`, `id`,
+`rules`, `nodes`, `node`, `port`, `remote`, `protocol`, `direction`,
+`action`, `comment`, `version` and `is:legacy`, and a query that reaches
+inside a rule opens that group while it stands. Zones has `name`, `id`,
+`interface`, `cidr`, `nodes` and `is:builtin`. A bare word searches what the
+old search field did. Each layer keeps its own query for the visit, and the
+address carries the one on screen as `q`. While the text does not read, the
+list shows the last query that did, dimmed and inert, and the field says why;
+a Nodes header click takes the order back from a query's `sort:`.
 
 A node that has never reported is never rendered as healthy, and an empty
 listener list is never rendered as "nothing open" unless a fresh snapshot says

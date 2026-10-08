@@ -41,7 +41,8 @@ import RowMenu from "./RowMenu.vue";
 
 const props = defineProps<{
   rows: readonly ExposureRowView[];
-  sortKey: ExposureSortKey;
+  /** The column the rows are sorted by; null when a query's sort: orders them by a field no column shows. */
+  sortKey: ExposureSortKey | null;
   sortDirection: "asc" | "desc";
   /** The node whose panel is open. */
   activeId: string;

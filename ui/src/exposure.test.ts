@@ -12,7 +12,6 @@ import {
   indexInterfaces,
   isPublicCidr,
   matchesGroup,
-  matchesZone,
   newestCollectedAt,
   parseAddress,
   ruleSentence,
@@ -509,13 +508,5 @@ describe("search across the lenses", () => {
     expect(matchesGroup(dbWg, ctx, "wg")).toEqual({ hit: true, inRules: true });
     expect(matchesGroup(groupWithComment, ctx, "hysteria")).toEqual({ hit: true, inRules: true });
     expect(matchesGroup(ssh, ctx, "postgres")).toEqual({ hit: false, inRules: false });
-  });
-
-  it("matches a zone by name, id, interface, cidr or description", () => {
-    expect(matchesZone(wg, "wg0")).toBe(true);
-    expect(matchesZone(wg, "10.7")).toBe(true);
-    expect(matchesZone(office, "office vpn")).toBe(true);
-    expect(matchesZone({ ...office, description: "The office concentrator" }, "concentrator")).toBe(true);
-    expect(matchesZone(wg, "tailscale")).toBe(false);
   });
 });
