@@ -26,13 +26,15 @@ The page renders on the shared plugin chassis, `@latticenet/plugin-bridge/chassi
 the same header, tabs, table card, chips and overlays as the other plugin
 frames, on the token contract the console publishes. `ui/src/styles.css` adds
 only what NetGuard alone needs. `ui/package.json` pins
-`@latticenet/plugin-bridge` `0.2.0-alpha.2` from the package registry (GitHub
+`@latticenet/plugin-bridge` `0.2.0-alpha.3` from the package registry (GitHub
 Packages, `ui/.npmrc`), and the lock holds it to the published tarball and its
 integrity. Its client passes `pageState` and sends the page state back; its
 chassis carries the layer row, the non-modal side panel and the table fixes
 this page used to patch, starts the side panel and the modal at the frame's
 top edge, and draws the side panel's header the way the console draws a
-sheet's.
+sheet's. It also carries the console's list query: the search, filter and
+sort syntax in `@latticenet/plugin-bridge/query`, and `PcQueryBar` and
+`useListQuery` in the chassis.
 
 - **Overview** (the default): what needs a hand first (ports open to the
   internet that no rule explains, named with their owners; nodes whose live
