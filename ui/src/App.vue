@@ -1081,10 +1081,23 @@ const layerBar = computed(() => {
     examples: NODES_QUERY_EXAMPLES,
   };
 });
-/* While the query on screen does not read, the rows below answer an earlier
+/**
+ * While the query on screen does not read, the rows below answer an earlier
  * one: the panel is dimmed and inert, as the console's lists are, so nobody
- * opens or acts on a row for a query they cannot see. */
-const layerStale = computed(() => layerBar.value.query.invalid.value);
+ * opens or acts on a row for a query they cannot see. Only while it shows
+ * rows, though. When the last query that read kept none, the panel holds the
+ * no-match state, whose one action is Clear the query; an inert panel would
+ * leave that button dead exactly when the operator reaches for it. The other
+ * empty states (no nodes, nothing needs attention, a failed read) do not
+ * answer the query at all.
+ */
+const layerShowsRows = computed(() => {
+  if (view.value === "nodes") return posture.value.length > 0 && filteredViews.value.length > 0 && matchedViews.value.length > 0;
+  if (view.value === "groups") return !overviewFailed.value && matchedGroups.value.length > 0;
+  if (view.value === "zones") return !overviewFailed.value && matchedZones.value.length > 0;
+  return false;
+});
+const layerStale = computed(() => layerBar.value.query.invalid.value && layerShowsRows.value);
 /** Rows the current layer has before any search or filter. */
 const layerRows = computed(() => {
   if (view.value === "nodes") return posture.value.length;

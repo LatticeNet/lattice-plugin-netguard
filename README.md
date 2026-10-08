@@ -108,7 +108,9 @@ rows known to match it, as on the console: `-port:5432/tcp` keeps a node that
 never reported or whose snapshot is stale or still being read, and its Status
 says which; add `snapshot:fresh` to keep only nodes known to lack the port.
 While the text does not read, the
-list shows the last query that did, dimmed and inert, and the field says why.
+list shows the last query that did, dimmed and inert, and the field says why;
+when that query kept no rows, the no-match state stays live, so its Clear the
+query works.
 A Nodes header click takes the order back from a query's `sort:`, or from the
 relevance a bare word ranks by, until the text changes.
 
