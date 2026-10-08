@@ -484,8 +484,13 @@ function onSort(key: ExposureSortKey): void {
   // A header click takes the order back from a query that sorts, the way the
   // console's tables do: the query keeps its filter and loses its sort: terms,
   // and the column sorts from its first direction.
+  // While a bare word ranks the rows by relevance, the click takes the order
+  // back from that ranking for as long as the text stays as it is.
   if (nodesQuery.sorted.value) {
     layerQuery.nodes = withoutSorts(layerQuery.nodes);
+    sortKey.value = key;
+    sortDirection.value = "asc";
+  } else if (nodesQuery.active.value.score && headerOrderFor.value !== layerQuery.nodes) {
     sortKey.value = key;
     sortDirection.value = "asc";
   } else if (sortKey.value === key) {
@@ -494,6 +499,7 @@ function onSort(key: ExposureSortKey): void {
     sortKey.value = key;
     sortDirection.value = "asc";
   }
+  headerOrderFor.value = layerQuery.nodes;
   settle();
 }
 
@@ -511,13 +517,28 @@ const nodesQuery = useListQuery(
   nodesQuerySchema(() => ({ canSeeReality: canSeeReality.value, realityRead: !realityFailed.value, groups: overview.value.groups, zones: overview.value.zones })),
   toRef(layerQuery, "nodes"),
 );
-const matchedViews = computed(() => nodesQuery.rows.value);
+/**
+ * The query text a header click last took the order back for. A bare word
+ * ranks the kept rows by relevance (the console's rule); after a header click
+ * on that same text the rows follow the column instead, until the text
+ * changes.
+ */
+const headerOrderFor = ref<string | null>(null);
+const headerOrders = computed(() => !nodesQuery.sorted.value && Boolean(nodesQuery.active.value.score) && headerOrderFor.value === layerQuery.nodes);
+const matchedViews = computed(() => (headerOrders.value ? applyOrder(nodesQuery.rows.value, order.value) : nodesQuery.rows.value));
 /** "port:22/tcp", the search a picture row opens, for the no-match copy. */
 const portQuery = computed(() => parsePortQuery(layerQuery.nodes.trim().toLowerCase()));
 
-/** The header's mark: the column's own sort, or the column the query's first sort: names, or none. */
+/**
+ * The header's mark: the column's own sort; the column the query's first
+ * sort: names; or none, while a sort: no column shows or a bare word's
+ * relevance orders the rows.
+ */
 const headerSort = computed<{ key: ExposureSortKey; direction: "asc" | "desc" } | null>(() => {
-  if (!nodesQuery.sorted.value) return { key: sortKey.value, direction: sortDirection.value };
+  if (!nodesQuery.sorted.value) {
+    if (nodesQuery.active.value.score && !headerOrders.value) return null;
+    return { key: sortKey.value, direction: sortDirection.value };
+  }
   const first = nodesQuery.active.value.sorts[0]!;
   const key = ({ status: "attention", name: "name", seen: "seen" } as Partial<Record<string, ExposureSortKey>>)[first.field.key];
   return key ? { key, direction: first.desc ? "desc" : "asc" } : null;

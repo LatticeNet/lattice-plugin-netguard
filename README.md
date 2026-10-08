@@ -103,9 +103,14 @@ of the console's node fields are not offered. Groups has `name`, `id`,
 inside a rule opens that group while it stands. Zones has `name`, `id`,
 `interface`, `cidr`, `nodes` and `is:builtin`. A bare word searches what the
 old search field did. Each layer keeps its own query for the visit, and the
-address carries the one on screen as `q`. While the text does not read, the
-list shows the last query that did, dimmed and inert, and the field says why;
-a Nodes header click takes the order back from a query's `sort:`.
+address carries the one on screen as `q`. A negated term leaves out only the
+rows known to match it, as on the console: `-port:5432/tcp` keeps a node that
+never reported or whose snapshot is stale or still being read, and its Status
+says which; add `snapshot:fresh` to keep only nodes known to lack the port.
+While the text does not read, the
+list shows the last query that did, dimmed and inert, and the field says why.
+A Nodes header click takes the order back from a query's `sort:`, or from the
+relevance a bare word ranks by, until the text changes.
 
 A node that has never reported is never rendered as healthy, and an empty
 listener list is never rendered as "nothing open" unless a fresh snapshot says

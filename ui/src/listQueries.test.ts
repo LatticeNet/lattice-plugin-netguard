@@ -235,6 +235,14 @@ describe("the Nodes query", () => {
     expect(run(intentOnly, FLEET, "foreign>=0")).toEqual([]);
   });
 
+  it("leaves out under a negation only the rows known to match, as the console's grammar does", () => {
+    // pi-zero never reported, lab-2 is stale and sin-edge-01 still reading:
+    // nobody knows they lack 5432, and their Status column says why.
+    expect(ids(run(nodes, FLEET, "-port:5432/tcp"))).toEqual(["lax-exit-02", "hkg-edge-01", "build-1", "lab-2", "homeserver", "pi-zero", "sin-edge-01"]);
+    // Ask for the evidence as well to keep only nodes known to lack it.
+    expect(ids(run(nodes, FLEET, "-port:5432/tcp snapshot:fresh -status:reading"))).toEqual(["lax-exit-02", "hkg-edge-01", "build-1", "homeserver"]);
+  });
+
   it("searches a bare word over name, groups, ports and their processes", () => {
     expect(ids(run(nodes, FLEET, "dockerd"))).toEqual(["build-1"]);
     expect(ids(run(nodes, FLEET, "hkg"))).toEqual(["hkg-edge-01"]);
