@@ -18,7 +18,7 @@ covers (`observed 03:52:10Z, 41s ago · 33 nodes report · 2 stale · 1 never
 reported`). A read that failed prints no count: the proof line says what was
 not read, and a number or tab count it would have fed says "unknown" or
 nothing, never the zero an empty join produces. The layer, the open node, the
-search and the Nodes filter live in the console's address (design 22 page
+query and the Nodes filter live in the console's address (design 22 page
 state), so a reload or a pasted link lands on the same place; old `?lens=` and
 `?expand=` links still land.
 
@@ -26,13 +26,15 @@ The page renders on the shared plugin chassis, `@latticenet/plugin-bridge/chassi
 the same header, tabs, table card, chips and overlays as the other plugin
 frames, on the token contract the console publishes. `ui/src/styles.css` adds
 only what NetGuard alone needs. `ui/package.json` pins
-`@latticenet/plugin-bridge` `0.2.0-alpha.2` from the package registry (GitHub
+`@latticenet/plugin-bridge` `0.2.0-alpha.3` from the package registry (GitHub
 Packages, `ui/.npmrc`), and the lock holds it to the published tarball and its
 integrity. Its client passes `pageState` and sends the page state back; its
 chassis carries the layer row, the non-modal side panel and the table fixes
 this page used to patch, starts the side panel and the modal at the frame's
 top edge, and draws the side panel's header the way the console draws a
-sheet's.
+sheet's. It also carries the console's list query: the search, filter and
+sort syntax in `@latticenet/plugin-bridge/query`, and `PcQueryBar` and
+`useListQuery` in the chassis.
 
 - **Overview** (the default): what needs a hand first (ports open to the
   internet that no rule explains, named with their owners; nodes whose live
@@ -41,7 +43,7 @@ sheet's.
   unexplained ports, drift, observe only. Then one picture: every port the
   fleet has open to the internet, how many nodes open it and how many of those
   no rule explains, drawn only from fresh snapshots that were read; a port
-  opens Nodes on its exact search (`port:22/tcp`), which lists the nodes that
+  opens Nodes on its exact query (`port:22/tcp`), which lists the nodes that
   row counted. A failed overview read leaves ports unjudged: no port is
   called unexplained, the picture is not drawn, and drift, which the server
   computes, stays.
@@ -82,6 +84,35 @@ sheet's.
 - **Zones:** interfaces and CIDRs accepted before any security group is
   evaluated, with how many nodes trust each. This is how a management path
   stays open.
+
+Nodes, Groups and Zones each take the console's list query in one field above
+the list (`PcQueryBar`): space-separated terms that must all match, `OR`,
+parentheses, `-term` to leave rows out, `field:value`, comparisons such as
+`unexplained>0` or `seen>1h`, `is:flag`, and `sort:field` or `sort:-field`.
+The fields are each list's own, read from what its table shows
+(`ui/src/listQueries.ts`). Nodes has `status` (the Status column's verdict:
+`drifted`, `apply_failed`, `no_rule`, `stale`, `never_reported` and the rest,
+sorted worst first), `coverage`, `drift`, `snapshot`, `group`, `zone`, `port`
+(exact, as the Overview's picture counts it), `process`, `unexplained`,
+`open`, `foreign`, `seen`, `applied`, the flags `is:attention`, `is:drifted`,
+`is:failed` and `is:enforced`, and the console's shared `name` and `id`; the
+plugin contract carries no online state, address or agent report, so the rest
+of the console's node fields are not offered. Groups has `name`, `id`,
+`rules`, `nodes`, `node`, `port`, `remote`, `protocol`, `direction`,
+`action`, `comment`, `version` and `is:legacy`, and a query that reaches
+inside a rule opens that group while it stands. Zones has `name`, `id`,
+`interface`, `cidr`, `nodes` and `is:builtin`. A bare word searches what the
+old search field did. Each layer keeps its own query for the visit, and the
+address carries the one on screen as `q`. A negated term leaves out only the
+rows known to match it, as on the console: `-port:5432/tcp` keeps a node that
+never reported or whose snapshot is stale or still being read, and its Status
+says which; add `snapshot:fresh` to keep only nodes known to lack the port.
+While the text does not read, the
+list shows the last query that did, dimmed and inert, and the field says why;
+when that query kept no rows, the no-match state stays live, so its Clear the
+query works.
+A Nodes header click takes the order back from a query's `sort:`, or from the
+relevance a bare word ranks by, until the text changes.
 
 A node that has never reported is never rendered as healthy, and an empty
 listener list is never rendered as "nothing open" unless a fresh snapshot says

@@ -18,10 +18,11 @@
  * panel that renders an unreported node as a healthy one is worse than no
  * panel at all.
  */
-import { computed, onBeforeUnmount, ref, watch } from "vue";
+import { computed, onBeforeUnmount, reactive, ref, toRef, watch } from "vue";
 import { Boxes, Plus, Radar, RefreshCw, Shield, ShieldCheck } from "@lucide/vue";
 
 import { BridgeClient, canCall, type HostInit } from "@latticenet/plugin-bridge";
+import { withoutSorts } from "@latticenet/plugin-bridge/query";
 import {
   PcButton,
   PcConfirmDialog,
@@ -33,13 +34,14 @@ import {
   PcPagination,
   PcPanel,
   PcProofLine,
-  PcSearchField,
+  PcQueryBar,
   PcSidePanel,
   PcSkeleton,
   PcStatCard,
   PcStatStrip,
   PcToolbar,
   PcWorkspace,
+  useListQuery,
   useOverlayEscape,
 } from "@latticenet/plugin-bridge/chassis";
 
@@ -62,8 +64,6 @@ import {
   draftRuleFor,
   findingsFor,
   formatProcesses,
-  matchesGroup,
-  matchesZone,
   newestCollectedAt,
   settleOrder,
   usedByNodes,
@@ -89,11 +89,19 @@ import {
   type ReviewResponse,
   type SecurityGroup,
 } from "./netguardModel";
+import {
+  GROUPS_QUERY_EXAMPLES,
+  NODES_QUERY_EXAMPLES,
+  ZONES_QUERY_EXAMPLES,
+  groupsQuerySchema,
+  groupsReachedByQuery,
+  nodesQuerySchema,
+  zonesQuerySchema,
+} from "./listQueries";
 import { attentionComparator } from "./nodeStatus";
 import {
   attentionEmptyCopy,
   attentionItems,
-  matchesPortQuery,
   needsAttention,
   overviewNumbers,
   parsePortQuery,
@@ -165,7 +173,23 @@ const realityFailed = ref(false);
 // an old `?lens=` link to the frame itself.
 const startState = decodeNgState(documentPageState());
 const view = ref<NgView>(startState.view);
-const search = ref(startState.q);
+/**
+ * Each list layer keeps its own query for the visit. The three lists have
+ * their own fields (listQueries.ts), so a Nodes query such as `status:drifted`
+ * carried onto Groups would only be an error there; switching layers shows
+ * that layer's query, and switching back finds the Nodes query where it was.
+ * The address carries the query of the layer on screen, as `q`.
+ */
+type ListView = Exclude<NgView, "overview">;
+const layerQuery = reactive<Record<ListView, string>>({ nodes: "", groups: "", zones: "" });
+if (startState.view !== "overview") layerQuery[startState.view] = startState.q;
+/** The query of the layer on screen; Overview has none. */
+const search = computed<string>({
+  get: () => (view.value === "overview" ? "" : layerQuery[view.value]),
+  set: (value) => {
+    if (view.value !== "overview") layerQuery[view.value] = value;
+  },
+});
 const nodeFilter = ref<NodeFilter>(startState.show);
 /** The node whose side panel is open, or asked for by a link and not yet loaded. */
 const openId = ref(startState.open);
@@ -174,7 +198,10 @@ const groupsOpen = ref(new Set<string>(startState.groups));
 
 function applyState(state: NgPageState): void {
   view.value = state.view;
-  search.value = state.q;
+  layerQuery.nodes = "";
+  layerQuery.groups = "";
+  layerQuery.zones = "";
+  if (state.view !== "overview") layerQuery[state.view] = state.q;
   nodeFilter.value = state.show;
   openId.value = state.open;
   groupsOpen.value = new Set(state.groups);
@@ -415,14 +442,14 @@ function onAttention(item: AttentionItem): void {
     openNode(item.action.nodeId);
     return;
   }
-  search.value = "";
+  layerQuery.nodes = "";
   nodeFilter.value = "attention";
   showNodes();
 }
 
 /** A picture row opens Nodes on its exact port search, which lists the nodes the row counted. */
 function showPort(port: string): void {
-  search.value = port;
+  layerQuery.nodes = port;
   nodeFilter.value = "all";
   showNodes();
 }
@@ -454,49 +481,89 @@ function settle(): void {
 }
 
 function onSort(key: ExposureSortKey): void {
-  if (sortKey.value === key) {
+  // A header click takes the order back from a query that sorts, the way the
+  // console's tables do: the query keeps its filter and loses its sort: terms,
+  // and the column sorts from its first direction.
+  // While a bare word ranks the rows by relevance, the click takes the order
+  // back from that ranking for as long as the text stays as it is.
+  if (nodesQuery.sorted.value) {
+    layerQuery.nodes = withoutSorts(layerQuery.nodes);
+    sortKey.value = key;
+    sortDirection.value = "asc";
+  } else if (nodesQuery.active.value.score && headerOrderFor.value !== layerQuery.nodes) {
+    sortKey.value = key;
+    sortDirection.value = "asc";
+  } else if (sortKey.value === key) {
     sortDirection.value = sortDirection.value === "asc" ? "desc" : "asc";
   } else {
     sortKey.value = key;
     sortDirection.value = "asc";
   }
+  headerOrderFor.value = layerQuery.nodes;
   settle();
 }
 
-/** Node, id, group and zone ids, group names and the open ports themselves. */
-function matchesSearch(candidate: ExposureRowView, needle: string): boolean {
-  const haystack = [
-    candidate.row.nodeId,
-    candidate.row.nodeName,
-    ...candidate.row.groupIds,
-    ...candidate.row.zoneIds,
-    ...(candidate.exposure.managedBy.kind === "none" ? [] : candidate.exposure.managedBy.names),
-    ...candidate.exposure.open.map((span) => `${span.from} ${span.to} ${formatProcesses(span)}`),
-  ];
-  return haystack.some((value) => value.toLowerCase().includes(needle));
-}
-
-const searching = computed(() => search.value.trim().length > 0);
-const needle = computed(() => search.value.trim().toLowerCase());
-/** "port:22/tcp" is one exact open port or bank, not text (overview.ts). */
-const portQuery = computed(() => parsePortQuery(needle.value));
 const attentionCount = computed(() => views.value.filter(needsAttention).length);
 const filteredViews = computed(() => (nodeFilter.value === "attention" ? views.value.filter(needsAttention) : views.value));
-const matchedViews = computed(() => {
-  const query = portQuery.value;
-  const matched = !needle.value
-    ? filteredViews.value
-    : filteredViews.value.filter((candidate) => (query ? matchesPortQuery(candidate, query) : matchesSearch(candidate, needle.value)));
-  return applyOrder(matched, order.value);
+/** The filter's rows in the settled order; the query keeps that order unless it sorts or a bare word ranks the rows. */
+const orderedViews = computed(() => applyOrder(filteredViews.value, order.value));
+
+/* Each list layer runs the console's list query over its own rows and
+ * fields (listQueries.ts). The schemas are built once; what they read from
+ * the page (what the session may read, the rules that name an id) is read
+ * when the query runs. */
+const nodesQuery = useListQuery(
+  orderedViews,
+  nodesQuerySchema(() => ({ canSeeReality: canSeeReality.value, realityRead: !realityFailed.value, groups: overview.value.groups, zones: overview.value.zones })),
+  toRef(layerQuery, "nodes"),
+);
+/**
+ * The query text a header click last took the order back for. A bare word
+ * ranks the kept rows by relevance (the console's rule); after a header click
+ * on that same text the rows follow the column instead, until the text
+ * changes.
+ */
+const headerOrderFor = ref<string | null>(null);
+const headerOrders = computed(() => !nodesQuery.sorted.value && Boolean(nodesQuery.active.value.score) && headerOrderFor.value === layerQuery.nodes);
+const matchedViews = computed(() => (headerOrders.value ? applyOrder(nodesQuery.rows.value, order.value) : nodesQuery.rows.value));
+/** "port:22/tcp", the search a picture row opens, for the no-match copy. */
+const portQuery = computed(() => parsePortQuery(layerQuery.nodes.trim().toLowerCase()));
+
+/**
+ * The header's mark: the column's own sort; the column the query's first
+ * sort: names; or none, while a sort: no column shows or a bare word's
+ * relevance orders the rows.
+ */
+const headerSort = computed<{ key: ExposureSortKey; direction: "asc" | "desc" } | null>(() => {
+  if (!nodesQuery.sorted.value) {
+    if (nodesQuery.active.value.score && !headerOrders.value) return null;
+    return { key: sortKey.value, direction: sortDirection.value };
+  }
+  const first = nodesQuery.active.value.sorts[0]!;
+  const key = ({ status: "attention", name: "name", seen: "seen" } as Partial<Record<string, ExposureSortKey>>)[first.field.key];
+  return key ? { key, direction: first.desc ? "desc" : "asc" } : null;
 });
 
-/* The same search field narrows every collection layer. On Groups a hit
- * inside a rule opens the group while the search stands, because the
- * operator asked for the rule, not the group; clearing the search restores
- * their own set. */
-const groupHits = computed(() => new Map(overview.value.groups.map((group) => [group.id, matchesGroup(group, exposureContext.value, needle.value)])));
-const matchedGroups = computed(() => (needle.value ? overview.value.groups.filter((group) => groupHits.value.get(group.id)?.hit) : overview.value.groups));
-const matchedZones = computed(() => (needle.value ? overview.value.zones.filter((zone) => matchesZone(zone, needle.value)) : overview.value.zones));
+const groupsSchema = groupsQuerySchema(() => ({ context: exposureContext.value, nodes: overview.value.nodes }));
+const groupsQuery = useListQuery(
+  computed(() => overview.value.groups),
+  groupsSchema,
+  toRef(layerQuery, "groups"),
+);
+const matchedGroups = computed(() => groupsQuery.rows.value);
+/* On Groups a query that reaches inside a rule opens the group while it
+ * stands, because the operator asked for the rule, not the group; clearing
+ * the query restores their own set. */
+const groupsReached = computed(() =>
+  groupsQuery.filtering.value ? groupsReachedByQuery(groupsQuery.active.value.source, matchedGroups.value, groupsSchema, exposureContext.value) : new Set<string>(),
+);
+
+const zonesQuery = useListQuery(
+  computed(() => overview.value.zones),
+  zonesQuerySchema(() => ({ nodes: overview.value.nodes })),
+  toRef(layerQuery, "zones"),
+);
+const matchedZones = computed(() => zonesQuery.rows.value);
 
 function toggleGroup(groupId: string): void {
   const next = new Set(groupsOpen.value);
@@ -506,7 +573,7 @@ function toggleGroup(groupId: string): void {
 }
 
 function groupOpen(groupId: string): boolean {
-  return groupsOpen.value.has(groupId) || (needle.value.length > 0 && groupHits.value.get(groupId)?.inRules === true);
+  return groupsOpen.value.has(groupId) || groupsReached.value.has(groupId);
 }
 
 const page = ref(1);
@@ -986,18 +1053,51 @@ const permissionNote = computed(() => {
   return "read-only: netguard:admin is needed to create or edit a group";
 });
 
-const searchPlaceholder = computed(() => {
-  if (view.value === "groups") return "Search by group, rule port, remote or comment";
-  if (view.value === "zones") return "Search by zone, interface or CIDR";
-  return "Search by node, group, zone, port or process";
+/** The query bar of the layer on screen: its query, its words, its count and its examples. The count sits inside the field's end. */
+const layerBar = computed(() => {
+  if (view.value === "groups") {
+    return {
+      query: groupsQuery,
+      label: "Search, filter and sort groups",
+      placeholder: "Search groups, or port:22 action:deny",
+      count: { shown: matchedGroups.value.length, total: overview.value.groups.length },
+      examples: GROUPS_QUERY_EXAMPLES,
+    };
+  }
+  if (view.value === "zones") {
+    return {
+      query: zonesQuery,
+      label: "Search, filter and sort zones",
+      placeholder: "Search zones, or cidr:10.7 -is:builtin",
+      count: { shown: matchedZones.value.length, total: overview.value.zones.length },
+      examples: ZONES_QUERY_EXAMPLES,
+    };
+  }
+  return {
+    query: nodesQuery,
+    label: "Search, filter and sort nodes",
+    placeholder: "Search nodes, or status:drifted port:22/tcp",
+    count: { shown: matchedViews.value.length, total: filteredViews.value.length },
+    examples: NODES_QUERY_EXAMPLES,
+  };
 });
-const searchLabel = computed(() => (view.value === "groups" ? "Search groups" : view.value === "zones" ? "Search zones" : "Search nodes"));
-const matchNote = computed(() => {
-  if (!searching.value || loading.value || bootError.value) return "";
-  if (view.value === "groups") return `${matchedGroups.value.length} of ${plural(overview.value.groups.length, "group", "groups")} match`;
-  if (view.value === "zones") return `${matchedZones.value.length} of ${plural(overview.value.zones.length, "zone", "zones")} match`;
-  return `${matchedViews.value.length} of ${plural(filteredViews.value.length, "node", "nodes")} match`;
+/**
+ * While the query on screen does not read, the rows below answer an earlier
+ * one: the panel is dimmed and inert, as the console's lists are, so nobody
+ * opens or acts on a row for a query they cannot see. Only while it shows
+ * rows, though. When the last query that read kept none, the panel holds the
+ * no-match state, whose one action is Clear the query; an inert panel would
+ * leave that button dead exactly when the operator reaches for it. The other
+ * empty states (no nodes, nothing needs attention, a failed read) do not
+ * answer the query at all.
+ */
+const layerShowsRows = computed(() => {
+  if (view.value === "nodes") return posture.value.length > 0 && filteredViews.value.length > 0 && matchedViews.value.length > 0;
+  if (view.value === "groups") return !overviewFailed.value && matchedGroups.value.length > 0;
+  if (view.value === "zones") return !overviewFailed.value && matchedZones.value.length > 0;
+  return false;
 });
+const layerStale = computed(() => layerBar.value.query.invalid.value && layerShowsRows.value);
 /** Rows the current layer has before any search or filter. */
 const layerRows = computed(() => {
   if (view.value === "nodes") return posture.value.length;
@@ -1091,10 +1191,20 @@ function tabCount(value: number, failed: boolean): number | null {
         <FilterSwitch v-model="nodeFilter" :options="filterOptions" label="Which nodes to show" />
       </template>
       <template #search>
-        <PcSearchField v-model="search" :label="searchLabel" :placeholder="searchPlaceholder" />
+        <!-- One bar per layer (the key): each has its own fields, menu and recent queries. -->
+        <PcQueryBar
+          :key="view"
+          v-model="search"
+          :query="layerBar.query"
+          :count="layerBar.count"
+          :label="layerBar.label"
+          :placeholder="layerBar.placeholder"
+          :storage-key="`netguard.${view}`"
+          :examples="layerBar.examples"
+        />
       </template>
-      <template v-if="view === 'nodes' && (matchNote || nodesNote)" #note>{{ matchNote || nodesNote }}</template>
-      <template v-else-if="view !== 'nodes' && (matchNote || permissionNote)" #note>{{ matchNote || permissionNote }}</template>
+      <template v-if="view === 'nodes' && nodesNote" #note>{{ nodesNote }}</template>
+      <template v-else-if="view !== 'nodes' && permissionNote" #note>{{ permissionNote }}</template>
       <!-- The creating verb lives on the layer it creates in, and only once that layer was read. -->
       <template v-if="toolbarVerb" #primary>
         <PcButton v-if="toolbarVerb === 'zone'" variant="primary" @click="openZone()"><template #icon><Plus :size="15" /></template>New zone</PcButton>
@@ -1145,7 +1255,7 @@ function tabCount(value: number, failed: boolean): number | null {
 
     <!-- No card header: the selected layer already names this list, and its
          counts sit on the filter above it. The card holds the rows only. -->
-    <PcPanel v-else-if="view === 'nodes'" id="pc-panel-nodes" role="tabpanel" aria-labelledby="pc-tab-nodes">
+    <PcPanel v-else-if="view === 'nodes'" id="pc-panel-nodes" role="tabpanel" aria-labelledby="pc-tab-nodes" :data-stale="layerStale ? 'true' : undefined" :inert="layerStale || undefined">
       <PcEmptyState v-if="!posture.length" title="No nodes are visible">
         <template #icon><Radar :size="26" /></template>
         <p>This session can see no nodes at all. A node appears here once its agent reports, or once it is bound to a security group.</p>
@@ -1155,18 +1265,18 @@ function tabCount(value: number, failed: boolean): number | null {
         <p>{{ attentionEmpty.body }}</p>
         <template #actions><PcButton @click="nodeFilter = 'all'">Show all nodes</PcButton></template>
       </PcEmptyState>
-      <PcEmptyState v-else-if="!matchedViews.length" kind="no-match" title="No node matches that search">
+      <PcEmptyState v-else-if="!matchedViews.length" kind="no-match" title="No node matches that query">
         <template #icon><Radar :size="26" /></template>
-        <p v-if="portQuery">No node in {{ plural(filteredViews.length, 'node', 'nodes') }} has <span class="pc-mono">{{ search.trim() }}</span> open on a fresh snapshot that was read. A <span class="pc-mono">port:</span> search matches that exact port or bank, the way the Overview's picture counts it.</p>
-        <p v-else>Nothing in {{ plural(filteredViews.length, 'node', 'nodes') }} matches <span class="pc-mono">{{ search.trim() }}</span>. The search covers node name and id, group and zone ids, group names, open ports and their owning process; <span class="pc-mono">port:22/tcp</span> finds one exact port.</p>
-        <template #actions><PcButton @click="search = ''">Clear the search</PcButton></template>
+        <p v-if="portQuery">No node in {{ plural(filteredViews.length, 'node', 'nodes') }} has <span class="pc-mono">{{ search.trim() }}</span> open on a fresh snapshot that was read. A <span class="pc-mono">port:</span> term matches that exact port or bank, the way the Overview's picture counts it.</p>
+        <p v-else>Nothing in {{ plural(filteredViews.length, 'node', 'nodes') }} matches <span class="pc-mono">{{ nodesQuery.active.value.source.trim() }}</span>. A bare word searches node name and id, groups, zones, open ports and their owning process; the help beside the field lists the fields, such as <span class="pc-mono">status:</span> and <span class="pc-mono">port:22/tcp</span>.</p>
+        <template #actions><PcButton @click="search = ''">Clear the query</PcButton></template>
       </PcEmptyState>
 
       <ExposureTable
         v-else
         :rows="pageViews"
-        :sort-key="sortKey"
-        :sort-direction="sortDirection"
+        :sort-key="headerSort?.key ?? null"
+        :sort-direction="headerSort?.direction ?? 'asc'"
         :active-id="openId"
         :menu-for="nodeMenu"
         :ignored="ignored"
@@ -1190,7 +1300,7 @@ function tabCount(value: number, failed: boolean): number | null {
       />
     </PcPanel>
 
-    <PcPanel v-else-if="view === 'groups'" id="pc-panel-groups" role="tabpanel" aria-labelledby="pc-tab-groups">
+    <PcPanel v-else-if="view === 'groups'" id="pc-panel-groups" role="tabpanel" aria-labelledby="pc-tab-groups" :data-stale="layerStale ? 'true' : undefined" :inert="layerStale || undefined">
       <p class="ng-layer-note">Ordered rules, attached to one or more nodes. The chain policy stays default drop, so anything no rule accepts is dropped. A group folds its rules underneath.</p>
       <PcEmptyState v-if="overviewFailed" kind="error" title="Groups were not read">
         <p>The overview request failed, so nothing here is known. The notice above says why.</p>
@@ -1207,10 +1317,10 @@ function tabCount(value: number, failed: boolean): number | null {
         @edit="openGroup"
         @delete="(group) => askDelete('group', group.id, group.name)"
       />
-      <PcEmptyState v-else-if="overview.groups.length" kind="no-match" title="No group matches that search">
+      <PcEmptyState v-else-if="overview.groups.length" kind="no-match" title="No group matches that query">
         <template #icon><Boxes :size="26" /></template>
-        <p>Nothing in {{ plural(overview.groups.length, 'group', 'groups') }} matches <span class="pc-mono">{{ search.trim() }}</span>. The search covers group name, id and description, and each rule's sentence and comment.</p>
-        <template #actions><PcButton @click="search = ''">Clear the search</PcButton></template>
+        <p>Nothing in {{ plural(overview.groups.length, 'group', 'groups') }} matches <span class="pc-mono">{{ groupsQuery.active.value.source.trim() }}</span>. A bare word searches group name, id and description, and each rule's sentence and comment; <span class="pc-mono">port:22</span> finds the rules that name a port.</p>
+        <template #actions><PcButton @click="search = ''">Clear the query</PcButton></template>
       </PcEmptyState>
       <PcEmptyState v-else title="No security groups">
         <template #icon><Boxes :size="26" /></template>
@@ -1221,7 +1331,7 @@ function tabCount(value: number, failed: boolean): number | null {
       </PcEmptyState>
     </PcPanel>
 
-    <PcPanel v-else id="pc-panel-zones" role="tabpanel" aria-labelledby="pc-tab-zones">
+    <PcPanel v-else id="pc-panel-zones" role="tabpanel" aria-labelledby="pc-tab-zones" :data-stale="layerStale ? 'true' : undefined" :inert="layerStale || undefined">
       <p class="ng-layer-note">Interfaces and CIDRs a node accepts before any security group is evaluated, once its binding trusts the zone. A built-in zone is defined on every node; loopback is always accepted.</p>
       <PcEmptyState v-if="overviewFailed" kind="error" title="Zones were not read">
         <p>The overview request failed, so nothing here is known. The notice above says why.</p>
@@ -1235,10 +1345,10 @@ function tabCount(value: number, failed: boolean): number | null {
         @edit="openZone"
         @delete="(zone) => askDelete('zone', zone.id, zone.name)"
       />
-      <PcEmptyState v-else-if="overview.zones.length" kind="no-match" title="No zone matches that search">
+      <PcEmptyState v-else-if="overview.zones.length" kind="no-match" title="No zone matches that query">
         <template #icon><ShieldCheck :size="26" /></template>
-        <p>Nothing in {{ plural(overview.zones.length, 'zone', 'zones') }} matches <span class="pc-mono">{{ search.trim() }}</span>. The search covers zone name, id and description, interfaces and CIDRs.</p>
-        <template #actions><PcButton @click="search = ''">Clear the search</PcButton></template>
+        <p>Nothing in {{ plural(overview.zones.length, 'zone', 'zones') }} matches <span class="pc-mono">{{ zonesQuery.active.value.source.trim() }}</span>. A bare word searches zone name, id and description, interfaces and CIDRs.</p>
+        <template #actions><PcButton @click="search = ''">Clear the query</PcButton></template>
       </PcEmptyState>
       <PcEmptyState v-else title="No trusted zones">
         <template #icon><ShieldCheck :size="26" /></template>

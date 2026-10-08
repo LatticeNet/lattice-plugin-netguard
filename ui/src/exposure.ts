@@ -946,7 +946,7 @@ export function applyOrder<T extends { row: PostureRow }>(views: readonly T[], o
   });
 }
 
-// ── search on the groups and zones lenses ───────────────────────────────────
+// ── a bare word on the groups layer ─────────────────────────────────────────
 
 /**
  * A group matches on its name, id or description, or on any rule's sentence
@@ -960,13 +960,6 @@ export function matchesGroup(group: SecurityGroup, ctx: ExposureContext, needle:
     [ruleSentence(rule, ctx), rule.comment ?? "", rule.id].some((value) => value.toLowerCase().includes(needle)),
   );
   return { hit: inRules, inRules };
-}
-
-/** A zone matches on its name, id, description, interfaces or CIDRs. */
-export function matchesZone(zone: GuardZone, needle: string): boolean {
-  return [zone.name, zone.id, zone.description ?? "", ...(zone.interfaces ?? []), ...(zone.cidrs ?? [])].some((value) =>
-    value.toLowerCase().includes(needle),
-  );
 }
 
 /** The most recent snapshot time across the fleet, for the proof line. */
