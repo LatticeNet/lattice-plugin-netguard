@@ -3,6 +3,10 @@ import { describe, expect, it } from "vitest";
 import {
   buildRemote,
   deleteQuestion,
+  directionOptions,
+  remoteKindOptions,
+  unsupportedRemoteReason,
+  unsupportedRuleReason,
   driftTone,
   endSentence,
   formatRanges,
@@ -30,6 +34,27 @@ describe("netguardModel", () => {
   it("maps remote values to the declared reference kind only", () => {
     expect(buildRemote("zone", " tailscale ")).toEqual({ kind: "zone", zone_id: "tailscale" });
     expect(buildRemote("any", "ignored")).toEqual({ kind: "any" });
+  });
+
+  // The compiler refuses group and domain remotes on every plan, so offering
+  // them let an operator author a rule no plan could ever apply.
+  it("offers only the remote kinds the compiler lowers", () => {
+    expect(remoteKindOptions("any").map((option) => option.value)).toEqual(["any", "cidr", "node", "zone"]);
+    expect(remoteKindOptions("cidr").every((option) => !option.disabled)).toBe(true);
+    const loaded = remoteKindOptions("group");
+    expect(loaded.at(-1)).toEqual({ value: "group", label: "group (not compiled)", disabled: true });
+    expect(unsupportedRemoteReason("group")).toContain("not compiled");
+    expect(unsupportedRemoteReason("domain")).toContain("CIDR");
+    expect(unsupportedRemoteReason("zone")).toBeUndefined();
+  });
+
+  // The compiler refuses egress too ("egress stays with netpolicy").
+  it("offers only the ingress direction and refuses a loaded egress rule", () => {
+    expect(directionOptions("ingress")).toEqual([{ value: "ingress", label: "ingress", disabled: false }]);
+    expect(directionOptions("egress").at(-1)).toEqual({ value: "egress", label: "egress (not compiled)", disabled: true });
+    expect(unsupportedRuleReason({ direction: "egress", remote: { kind: "any" } })).toContain("ingress");
+    expect(unsupportedRuleReason({ direction: "ingress", remote: { kind: "domain" } })).toContain("remove the rule");
+    expect(unsupportedRuleReason({ direction: "ingress", remote: { kind: "cidr" } })).toBeUndefined();
   });
 });
 

@@ -78,6 +78,60 @@ export function remoteValue(remote: Remote): string {
   return remote.cidr || remote.node_id || remote.group_id || remote.zone_id || remote.domain || "";
 }
 
+/**
+ * Remote kinds the guard compiler lowers. It refuses group remotes (they must
+ * be expanded to node refs first, which has not shipped) and domain remotes (a
+ * name is not a trustworthy source identity) on every plan, so the editor
+ * does not offer them (design 32 D7).
+ */
+export const GUARD_REMOTE_KINDS = ["any", "cidr", "node", "zone"] as const;
+
+export interface RemoteKindOption {
+  value: string;
+  label: string;
+  disabled: boolean;
+}
+
+/**
+ * The remote kinds a rule's select offers. A rule loaded with a kind the
+ * compiler refuses keeps that kind visible, disabled and labelled, so the
+ * select does not go blank and the operator can see what to replace.
+ */
+export function remoteKindOptions(current: string): RemoteKindOption[] {
+  const options: RemoteKindOption[] = GUARD_REMOTE_KINDS.map((kind) => ({ value: kind, label: kind, disabled: false }));
+  if (current && !(GUARD_REMOTE_KINDS as readonly string[]).includes(current)) {
+    options.push({ value: current, label: `${current} (not compiled)`, disabled: true });
+  }
+  return options;
+}
+
+/** Why a remote kind cannot be saved, or undefined when the compiler lowers it. */
+export function unsupportedRemoteReason(kind: string): string | undefined {
+  if ((GUARD_REMOTE_KINDS as readonly string[]).includes(kind)) return undefined;
+  if (kind === "group") return "group remotes are not compiled yet. Change the remote to the member nodes or their CIDRs, or remove the rule.";
+  if (kind === "domain") return "domain remotes are not accepted inbound, since a name is not a trustworthy source. Change the remote to a CIDR, or remove the rule.";
+  return `remote kind "${kind}" is not supported. Change the remote, or remove the rule.`;
+}
+
+/**
+ * The guard table filters inbound traffic only: the compiler refuses an
+ * egress rule ("egress stays with netpolicy"), so the editor offers ingress,
+ * and a loaded egress rule keeps its direction visible, disabled and marked.
+ */
+export function directionOptions(current: string): RemoteKindOption[] {
+  const options: RemoteKindOption[] = [{ value: "ingress", label: "ingress", disabled: false }];
+  if (current && current !== "ingress") options.push({ value: current, label: `${current} (not compiled)`, disabled: true });
+  return options;
+}
+
+/** Why a rule cannot be saved, or undefined when the compiler lowers it. */
+export function unsupportedRuleReason(rule: Pick<GuardRule, "direction" | "remote">): string | undefined {
+  if (rule.direction !== "ingress") {
+    return "the guard table filters inbound traffic only, and outbound rules belong to the outbound policy. Change the direction to ingress, or remove the rule.";
+  }
+  return unsupportedRemoteReason(rule.remote?.kind ?? "any");
+}
+
 export function buildRemote(kind: string, value: string): Remote {
   const remote: Remote = { kind };
   const clean = value.trim();
