@@ -14,7 +14,9 @@ import {
   buildRemote,
   formatRanges,
   parseRanges,
+  remoteKindOptions,
   remoteValue,
+  unsupportedRemoteReason,
   type GuardRule,
   type SecurityGroup,
 } from "../netguardModel";
@@ -97,6 +99,11 @@ function submit(): void {
     localError.value = "A group needs a name.";
     return;
   }
+  const refused = form.rules.findIndex((rule) => unsupportedRemoteReason(rule.remote.kind));
+  if (refused >= 0) {
+    localError.value = `Rule ${refused + 1}: ${unsupportedRemoteReason(form.rules[refused]!.remote.kind)}`;
+    return;
+  }
   let rules: GuardRule[];
   try {
     rules = form.rules.map((rule) => ({
@@ -177,8 +184,9 @@ function submit(): void {
             <label class="ng-field">
               <span>Remote kind</span>
               <select v-model="rule.remote.kind">
-                <option value="any">any</option><option value="cidr">cidr</option><option value="node">node</option>
-                <option value="group">group</option><option value="zone">zone</option><option value="domain">domain</option>
+                <option v-for="option in remoteKindOptions(rule.remote.kind)" :key="option.value" :value="option.value" :disabled="option.disabled">
+                  {{ option.label }}
+                </option>
               </select>
             </label>
             <label class="ng-field">

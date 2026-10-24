@@ -78,6 +78,41 @@ export function remoteValue(remote: Remote): string {
   return remote.cidr || remote.node_id || remote.group_id || remote.zone_id || remote.domain || "";
 }
 
+/**
+ * Remote kinds the guard compiler lowers. It refuses group remotes (they must
+ * be expanded to node refs first, which has not shipped) and domain remotes (a
+ * name is not a trustworthy source identity) on every plan, so the editor
+ * does not offer them (design 32 D7).
+ */
+export const GUARD_REMOTE_KINDS = ["any", "cidr", "node", "zone"] as const;
+
+export interface RemoteKindOption {
+  value: string;
+  label: string;
+  disabled: boolean;
+}
+
+/**
+ * The remote kinds a rule's select offers. A rule loaded with a kind the
+ * compiler refuses keeps that kind visible, disabled and labelled, so the
+ * select does not go blank and the operator can see what to replace.
+ */
+export function remoteKindOptions(current: string): RemoteKindOption[] {
+  const options: RemoteKindOption[] = GUARD_REMOTE_KINDS.map((kind) => ({ value: kind, label: kind, disabled: false }));
+  if (current && !(GUARD_REMOTE_KINDS as readonly string[]).includes(current)) {
+    options.push({ value: current, label: `${current} (not compiled)`, disabled: true });
+  }
+  return options;
+}
+
+/** Why a remote kind cannot be saved, or undefined when the compiler lowers it. */
+export function unsupportedRemoteReason(kind: string): string | undefined {
+  if ((GUARD_REMOTE_KINDS as readonly string[]).includes(kind)) return undefined;
+  if (kind === "group") return "group remotes are not compiled yet; name the member nodes or their CIDRs instead.";
+  if (kind === "domain") return "domain remotes are not accepted inbound, since a name is not a trustworthy source; use a CIDR.";
+  return `remote kind "${kind}" is not supported.`;
+}
+
 export function buildRemote(kind: string, value: string): Remote {
   const remote: Remote = { kind };
   const clean = value.trim();
