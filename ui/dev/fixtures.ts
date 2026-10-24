@@ -26,6 +26,9 @@ import type {
   GuardZone,
   LintFinding,
   NodeBinding,
+  NodeGroupBinding,
+  NodeGroupChoice,
+  NodeGroupPlanResult,
   Overview,
   RealityDetail,
   RealitySummary,
@@ -37,8 +40,8 @@ export const SCENARIOS = ["fleet", "empty", "readonly", "intentonly", "failing"]
 export type Scenario = (typeof SCENARIOS)[number];
 
 const SERVICE = "latticenet.netguard/firewall";
-const READ = ["overview", "review", "reality"];
-const WRITE = ["upsert_group", "delete_group", "upsert_zone", "delete_zone", "upsert_binding", "adopt", "plan"];
+const READ = ["overview", "review", "reality", "node_group_bindings"];
+const WRITE = ["upsert_group", "delete_group", "upsert_zone", "delete_zone", "upsert_binding", "adopt", "plan", "upsert_node_group_binding", "delete_node_group_binding", "plan_node_groups"];
 
 export const INTERFACES: Record<Scenario, { service: string; methods: string[] }[]> = {
   fleet: [{ service: SERVICE, methods: [...READ, ...WRITE] }],
@@ -321,16 +324,130 @@ function reviewFor(state: NodeState): Review {
 
 // ── scenario state and handlers ─────────────────────────────────────────────
 
+/* Node groups (design 32 S4). asia-edge binds two groups to six relays and
+ * an observe-only build box, which reads inactive; metix binds db-wg to the
+ * four Metix nodes and the legacy homeserver. Two of the asia relays joined
+ * after the last plan, so they have applied nothing yet; one Metix node left
+ * a group it had applied. The long-named group is unbound, for wrapping. */
+interface StoredNodeGroupBinding { group_id: string; security_group_ids: string[]; version: number }
+const NODE_GROUPS: NodeGroupChoice[] = [
+  { id: "grp_asia", name: "asia-edge", members: ["hkg-edge-01", "hkg-edge-02", "sin-edge-01", "sin-edge-02", "nrt-edge-01", "nrt-edge-02", "cd-build-1"] },
+  { id: "grp_metix", name: "metix", members: ["metix-dmit-1", "metix-dmit-2", "metix-dmit-3", "metix-racknerd-1", "cd-homeserver"] },
+  { id: "grp_lab", name: "lab", members: ["cd-lab-1", "cd-lab-2"] },
+  { id: "grp_long", name: "production relays in the mainland-adjacent regions with dual uplinks", members: ["hkg-edge-01", "sin-edge-01", "tpe-relay-01", "icn-relay-01"] },
+];
+const NODE_GROUP_BINDINGS: StoredNodeGroupBinding[] = [
+  { group_id: "grp_asia", security_group_ids: ["monitoring", "web"], version: 3 },
+  { group_id: "grp_metix", security_group_ids: ["db-wg"], version: 1 },
+];
+/* What each node's last apply compiled through node groups. */
+const APPLIED_DERIVED: Record<string, string[]> = {
+  "hkg-edge-01": ["grp_asia:monitoring", "grp_asia:web"], "hkg-edge-02": ["grp_asia:monitoring", "grp_asia:web"],
+  "sin-edge-01": ["grp_asia:monitoring", "grp_asia:web"], "sin-edge-02": ["grp_asia:monitoring", "grp_asia:web"],
+  "metix-dmit-1": ["grp_metix:db-wg"], "metix-dmit-3": ["grp_metix:db-wg"], "lax-exit-01": ["grp_asia:monitoring"],
+};
+
 interface State {
   groups: SecurityGroup[];
   zones: GuardZone[];
   nodes: NodeState[];
+  nodeGroups: NodeGroupChoice[];
+  nodeGroupBindings: StoredNodeGroupBinding[];
+  appliedDerived: Record<string, string[]>;
 }
 
 function build(scenario: Scenario): State {
-  if (scenario === "empty") return { groups: [], zones: ZONES.filter((zone) => zone.builtin), nodes: [] };
+  if (scenario === "empty") return { groups: [], zones: ZONES.filter((zone) => zone.builtin), nodes: [], nodeGroups: [], nodeGroupBindings: [], appliedDerived: {} };
   const groups = GROUPS.map((group) => ({ ...group, rules: group.rules.map((item) => ({ ...item })) }));
-  return { groups, zones: ZONES.map((zone) => ({ ...zone })), nodes: SPECS.map((spec, index) => buildNode(spec, index, groups)) };
+  return {
+    groups, zones: ZONES.map((zone) => ({ ...zone })), nodes: SPECS.map((spec, index) => buildNode(spec, index, groups)),
+    nodeGroups: NODE_GROUPS.map((group) => ({ ...group, members: [...group.members] })),
+    nodeGroupBindings: NODE_GROUP_BINDINGS.map((binding) => ({ ...binding, security_group_ids: [...binding.security_group_ids] })),
+    appliedDerived: Object.fromEntries(Object.entries(APPLIED_DERIVED).map(([key, value]) => [key, [...value]])),
+  };
+}
+
+function managedNode(state: State, nodeId: string): boolean {
+  const entry = state.nodes.find((candidate) => candidate.node.node_id === nodeId);
+  return Boolean(entry && entry.node.source === "stored" && entry.node.binding.managed);
+}
+
+/** The derived groups of a node, as "node group id:security group id", in compile order. */
+function derivedKeys(state: State, nodeId: string): string[] {
+  const own = new Set(state.nodes.find((entry) => entry.node.node_id === nodeId)?.node.binding.group_ids ?? []);
+  const out: string[] = [];
+  const bound = state.nodeGroupBindings
+    .map((binding) => ({ binding, group: state.nodeGroups.find((group) => group.id === binding.group_id) }))
+    .filter((pair) => pair.group?.members.includes(nodeId))
+    .sort((left, right) => left.group!.name.localeCompare(right.group!.name));
+  for (const { binding } of bound) {
+    for (const id of binding.security_group_ids) {
+      if (own.has(id)) continue;
+      own.add(id);
+      out.push(`${binding.group_id}:${id}`);
+    }
+  }
+  return out;
+}
+
+function derivedGroupsOf(state: State, nodeId: string): SecurityGroup[] {
+  const managed = managedNode(state, nodeId);
+  return derivedKeys(state, nodeId).map((key) => {
+    const [groupId, sgId] = key.split(":");
+    const group = state.groups.find((candidate) => candidate.id === sgId)!;
+    const nodeGroup = state.nodeGroups.find((candidate) => candidate.id === groupId)!;
+    return { ...group, source: "stored", via_node_group: { id: nodeGroup.id, name: nodeGroup.name }, inactive: !managed };
+  });
+}
+
+function bindingView(state: State, binding: StoredNodeGroupBinding): NodeGroupBinding {
+  const group = state.nodeGroups.find((candidate) => candidate.id === binding.group_id)!;
+  return {
+    ...binding, group_name: group.name,
+    members: group.members.map((nodeId) => {
+      const entry = state.nodes.find((candidate) => candidate.node.node_id === nodeId);
+      const active = managedNode(state, nodeId);
+      return { node_id: nodeId, node_name: entry?.spec.name ?? nodeId, state: active ? "active" : "inactive", ...(active ? {} : { reason: "group binding inactive: node not managed" }) };
+    }),
+  };
+}
+
+function planNodeGroups(state: State, groupId: string): NodeGroupPlanResult {
+  const result: NodeGroupPlanResult = { affected: [], unchanged: [], conflicts: [], inactive: [] };
+  const label = (key: string) => {
+    const [ngId, sgId] = key.split(":");
+    const nodeGroup = state.nodeGroups.find((candidate) => candidate.id === ngId);
+    return { id: sgId!, name: state.groups.find((candidate) => candidate.id === sgId)?.name ?? sgId, via_node_group: { id: ngId!, name: nodeGroup?.name } };
+  };
+  for (const entry of state.nodes) {
+    const nodeId = entry.node.node_id;
+    const now = derivedKeys(state, nodeId);
+    const applied = state.appliedDerived[nodeId] ?? [];
+    const touches = (keys: string[]) => keys.some((key) => key.startsWith(`${groupId}:`));
+    if (!touches(now) && !touches(applied)) continue;
+    if (!managedNode(state, nodeId)) {
+      result.inactive.push({ node_id: nodeId, node_name: entry.spec.name, via_node_group: { id: groupId, name: state.nodeGroups.find((g) => g.id === groupId)?.name }, reason: "group binding inactive: node not managed" });
+      continue;
+    }
+    const added = now.filter((key) => !applied.includes(key));
+    const removed = applied.filter((key) => !now.includes(key));
+    if (!added.length && !removed.length) {
+      result.unchanged.push({ node_id: nodeId, node_name: entry.spec.name, reason: "matches its last apply" });
+      continue;
+    }
+    if (entry.spec.lockout || nodeId === "nrt-edge-02") {
+      result.conflicts.push({ node_id: nodeId, node_name: entry.spec.name, reason: "plan blocked by lint findings", findings: [{ code: "lockout_risk_ssh", severity: "block", message: "no rule accepts tcp/22, the port sshd listens on" }] });
+      continue;
+    }
+    const describe = (keys: string[]) => keys.map((key) => { const ref = label(key); return `${ref.name} (via node group ${ref.via_node_group.name})`; }).join(", ");
+    const change = [added.length ? `adds ${describe(added)}` : "", removed.length ? `removes ${describe(removed)}` : ""].filter(Boolean).join("; ");
+    result.affected.push({
+      node_id: nodeId, node_name: entry.spec.name, approval_id: `apr_${nodeId}_${(NOW % 100000).toString(36)}`,
+      added: added.map(label), removed: removed.map(label), change,
+      order: [...entry.node.binding.group_ids.map((id) => ({ id, name: state.groups.find((g) => g.id === id)?.name ?? id })), ...now.map(label)],
+    });
+  }
+  return result;
 }
 
 const states = new Map<Scenario, State>();
@@ -353,7 +470,7 @@ function nodeOr(state: State, nodeId: unknown): NodeState {
 function overviewOf(state: State): Overview {
   // A node nobody bound is in the reality roster only, as on the real server.
   const bound = state.nodes.filter((entry) => entry.spec.shape !== "unbound" && entry.spec.shape !== "never");
-  return { groups: state.groups, zones: state.zones, nodes: bound.map((entry) => entry.node) };
+  return { groups: state.groups, zones: state.zones, nodes: bound.map((entry) => ({ ...entry.node, derived_groups: derivedGroupsOf(state, entry.node.node_id) })) };
 }
 
 type Handler = (payload: Record<string, any>) => unknown;
@@ -411,6 +528,24 @@ export function handlers(scenario: Scenario): Record<string, Handler> {
       entry.summary.managed = true;
       return { node: entry.node };
     },
+    "firewall/node_group_bindings": () => ({
+      bindings: state.nodeGroupBindings.map((binding) => bindingView(state, binding)),
+      node_groups: [...state.nodeGroups].sort((left, right) => left.name.localeCompare(right.name)),
+    }),
+    "firewall/upsert_node_group_binding": (payload) => {
+      if (!state.nodeGroups.some((group) => group.id === payload.group_id)) throw new Error(`node group ${payload.group_id} not found`);
+      const existing = state.nodeGroupBindings.find((binding) => binding.group_id === payload.group_id);
+      if ((existing?.version ?? 0) !== Number(payload.version ?? 0)) throw new Error("the node group's security-group binding changed since it was read");
+      const binding: StoredNodeGroupBinding = { group_id: payload.group_id, security_group_ids: [...(payload.security_group_ids ?? [])], version: (existing?.version ?? 0) + 1 };
+      if (existing) Object.assign(existing, binding);
+      else state.nodeGroupBindings.push(binding);
+      return bindingView(state, binding);
+    },
+    "firewall/delete_node_group_binding": (payload) => {
+      state.nodeGroupBindings = state.nodeGroupBindings.filter((binding) => binding.group_id !== payload.group_id);
+      return { ok: true };
+    },
+    "firewall/plan_node_groups": (payload) => planNodeGroups(state, String(payload.group_id ?? "")),
     "firewall/plan": (payload) => {
       const entry = nodeOr(state, payload.node_id);
       if (entry.spec.lockout && !payload.accept_lockout_risk) throw new Error("plan blocked: mgmt_lockout finding requires accept_lockout_risk");

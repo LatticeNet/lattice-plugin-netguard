@@ -9,12 +9,12 @@
     "network:apply",
     "task:run"
   ],
-  "version": "0.2.0-alpha.7",
+  "version": "0.2.0-alpha.8",
   "publisher": "latticenet",
-  "signature_ed25519": "QQ9wD5WxgVyesSNXodab8ljc6kkneeS4qywIuHuU1X1dAfl59HfLwmVvFqmo6knJOVV+7YjZbbDH9qQAC21dDw==",
+  "signature_ed25519": "",
   "bundle": {
     "format": "tar+gzip",
-    "digest_sha256": "214e92da931db668f6e07ec836383b7cf322fd415e7f5728aa1e9a79d600f97f"
+    "digest_sha256": "f0c4d87a9a9a55d667c2fc2476dd7c83aed00ffb596a3727102d5609826cd610"
   },
   "runtime": {
     "protocol": "stdio-json-v1",
@@ -29,7 +29,7 @@
     "bridge_version": "1"
   },
   "compatibility": {
-    "server": "\u003e=0.2.1",
+    "server": "\u003e=0.2.2-alpha.147",
     "dashboard_host": "\u003e=1",
     "runtime_protocol": "\u003e=1"
   },
@@ -127,6 +127,39 @@
           "effect": "read",
           "scopes": [
             "netguard:read"
+          ]
+        },
+        {
+          "name": "node_group_bindings",
+          "effect": "read",
+          "scopes": [
+            "netguard:read",
+            "group:read"
+          ]
+        },
+        {
+          "name": "upsert_node_group_binding",
+          "effect": "write",
+          "scopes": [
+            "netguard:admin",
+            "group:read"
+          ]
+        },
+        {
+          "name": "delete_node_group_binding",
+          "effect": "write",
+          "scopes": [
+            "netguard:admin",
+            "group:read"
+          ]
+        },
+        {
+          "name": "plan_node_groups",
+          "effect": "plan",
+          "scopes": [
+            "netguard:admin",
+            "network:plan",
+            "group:read"
           ]
         }
       ],

@@ -17,8 +17,10 @@ import {
   directionOptions,
   remoteKindOptions,
   remoteValue,
+  missingRemoteReason,
   unsupportedRuleReason,
   type GuardRule,
+  type NodeGroupChoice,
   type SecurityGroup,
 } from "../netguardModel";
 
@@ -32,6 +34,8 @@ const props = defineProps<{
    */
   draftRules?: readonly GuardRule[];
   draftName?: string;
+  /** The node groups a group remote may name; empty when the session cannot read them. */
+  nodeGroups?: readonly NodeGroupChoice[];
   saving: boolean;
   error: string;
 }>();
@@ -103,6 +107,12 @@ function submit(): void {
   const refused = form.rules.findIndex((rule) => unsupportedRuleReason(rule));
   if (refused >= 0) {
     localError.value = `Rule ${refused + 1}: ${unsupportedRuleReason(form.rules[refused]!)}`;
+    return;
+  }
+  const blank = form.rules.findIndex((rule) => !rule.disabled && missingRemoteReason(rule.remote.kind, rule.remoteText));
+  if (blank >= 0) {
+    const rule = form.rules[blank]!;
+    localError.value = `Rule ${blank + 1}: ${missingRemoteReason(rule.remote.kind, rule.remoteText)}`;
     return;
   }
   let rules: GuardRule[];
@@ -194,9 +204,19 @@ function submit(): void {
                 </option>
               </select>
             </label>
-            <label class="ng-field">
-              <span>Remote value</span>
-              <input v-model="rule.remoteText" type="text" :disabled="rule.remote.kind === 'any'" placeholder="10.0.0.0/8" />
+            <label v-if="rule.remote.kind === 'group' && nodeGroups?.length" class="ng-field">
+              <span>Node group</span>
+              <select v-model="rule.remoteText">
+                <option value="" disabled>Choose a node group</option>
+                <option v-for="choice in nodeGroups" :key="choice.id" :value="choice.id">
+                  {{ choice.name }} ({{ choice.members.length === 1 ? "1 member" : `${choice.members.length} members` }})
+                </option>
+                <option v-if="rule.remoteText && !nodeGroups.some((choice) => choice.id === rule.remoteText)" :value="rule.remoteText">{{ rule.remoteText }}</option>
+              </select>
+            </label>
+            <label v-else class="ng-field">
+              <span>{{ rule.remote.kind === 'group' ? 'Node group id' : 'Remote value' }}</span>
+              <input v-model="rule.remoteText" type="text" :disabled="rule.remote.kind === 'any'" :placeholder="rule.remote.kind === 'group' ? 'grp_web' : '10.0.0.0/8'" />
             </label>
             <label class="ng-field">
               <span>Comment</span>

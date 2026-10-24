@@ -19,6 +19,10 @@ export interface SecurityGroup {
   version: number;
   source?: string;
   node_id?: string;
+  /** The node group a derived group comes through; the name needs group:read. */
+  via_node_group?: { id: string; name?: string };
+  /** A derived group on a node NetGuard does not manage: it compiles nothing there. */
+  inactive?: boolean;
 }
 export interface GuardZone {
   id: string;
@@ -46,9 +50,46 @@ export interface GuardNode {
   source: "stored" | "legacy";
   binding: NodeBinding;
   groups: SecurityGroup[];
+  /** The groups the node's node groups bind, in compile order after `groups`. */
+  derived_groups?: SecurityGroup[];
   zones: GuardZone[];
 }
 export interface Overview { groups: SecurityGroup[]; zones: GuardZone[]; nodes: GuardNode[] }
+
+/** One member of a bound node group: compiled where NetGuard manages it, inactive elsewhere. */
+export interface NodeGroupMember { node_id: string; node_name?: string; state: "active" | "inactive"; reason?: string }
+/** Security groups bound to a node group, in compile order (design 32 S4). */
+export interface NodeGroupBinding {
+  group_id: string;
+  group_name: string;
+  security_group_ids: string[];
+  version: number;
+  members: NodeGroupMember[];
+}
+/** A node group a binding may name, with its resolved members. */
+export interface NodeGroupChoice { id: string; name: string; members: string[] }
+export interface NodeGroupBindingsResponse { bindings: NodeGroupBinding[]; node_groups: NodeGroupChoice[] }
+
+export interface PlanGroupRef { id: string; name?: string; via_node_group?: { id: string; name?: string } }
+export interface NodeGroupPlanNode {
+  node_id: string;
+  node_name?: string;
+  approval_id?: string;
+  plan_sha?: string;
+  added: PlanGroupRef[];
+  removed: PlanGroupRef[];
+  change?: string;
+  order: PlanGroupRef[];
+  findings?: LintFinding[];
+}
+export interface NodeGroupPlanSkipped { node_id: string; node_name?: string; via_node_group?: { id: string; name?: string }; reason: string; findings?: LintFinding[] }
+/** What a node-group batch plan did: one approval per changed node, and why the rest were not planned. */
+export interface NodeGroupPlanResult {
+  affected: NodeGroupPlanNode[];
+  unchanged: NodeGroupPlanSkipped[];
+  conflicts: NodeGroupPlanSkipped[];
+  inactive: NodeGroupPlanSkipped[];
+}
 
 export function parseRanges(value: string): PortRange[] {
   const ranges: PortRange[] = [];
@@ -79,12 +120,12 @@ export function remoteValue(remote: Remote): string {
 }
 
 /**
- * Remote kinds the guard compiler lowers. It refuses group remotes (they must
- * be expanded to node refs first, which has not shipped) and domain remotes (a
- * name is not a trustworthy source identity) on every plan, so the editor
- * does not offer them (design 32 D7).
+ * Remote kinds the guard compiler lowers. A node group remote expands to its
+ * members' addresses at compile time (design 32 D3). A domain remote is
+ * refused on every plan, since a name is not a trustworthy source identity,
+ * so the editor does not offer it.
  */
-export const GUARD_REMOTE_KINDS = ["any", "cidr", "node", "zone"] as const;
+export const GUARD_REMOTE_KINDS = ["any", "cidr", "node", "group", "zone"] as const;
 
 export interface RemoteKindOption {
   value: string;
@@ -98,7 +139,7 @@ export interface RemoteKindOption {
  * select does not go blank and the operator can see what to replace.
  */
 export function remoteKindOptions(current: string): RemoteKindOption[] {
-  const options: RemoteKindOption[] = GUARD_REMOTE_KINDS.map((kind) => ({ value: kind, label: kind, disabled: false }));
+  const options: RemoteKindOption[] = GUARD_REMOTE_KINDS.map((kind) => ({ value: kind, label: kind === "group" ? "node group" : kind, disabled: false }));
   if (current && !(GUARD_REMOTE_KINDS as readonly string[]).includes(current)) {
     options.push({ value: current, label: `${current} (not compiled)`, disabled: true });
   }
@@ -108,7 +149,6 @@ export function remoteKindOptions(current: string): RemoteKindOption[] {
 /** Why a remote kind cannot be saved, or undefined when the compiler lowers it. */
 export function unsupportedRemoteReason(kind: string): string | undefined {
   if ((GUARD_REMOTE_KINDS as readonly string[]).includes(kind)) return undefined;
-  if (kind === "group") return "group remotes are not compiled yet. Change the remote to the member nodes or their CIDRs, or remove the rule.";
   if (kind === "domain") return "domain remotes are not accepted inbound, since a name is not a trustworthy source. Change the remote to a CIDR, or remove the rule.";
   return `remote kind "${kind}" is not supported. Change the remote, or remove the rule.`;
 }
@@ -130,6 +170,16 @@ export function unsupportedRuleReason(rule: Pick<GuardRule, "direction" | "remot
     return "the guard table filters inbound traffic only, and outbound rules belong to the outbound policy. Change the direction to ingress, or remove the rule.";
   }
   return unsupportedRemoteReason(rule.remote?.kind ?? "any");
+}
+
+/** Why a remote cannot be saved without its value, or undefined when it has one. */
+export function missingRemoteReason(kind: string, value: string): string | undefined {
+  if (value.trim()) return undefined;
+  if (kind === "group") return "choose the node group the rule lets in.";
+  if (kind === "cidr") return "enter the CIDR the rule lets in.";
+  if (kind === "node") return "enter the node the rule lets in.";
+  if (kind === "zone") return "choose the trusted zone the rule lets in.";
+  return undefined;
 }
 
 export function buildRemote(kind: string, value: string): Remote {

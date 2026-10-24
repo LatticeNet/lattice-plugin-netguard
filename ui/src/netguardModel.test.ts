@@ -4,6 +4,7 @@ import {
   buildRemote,
   deleteQuestion,
   directionOptions,
+  missingRemoteReason,
   remoteKindOptions,
   unsupportedRemoteReason,
   unsupportedRuleReason,
@@ -36,14 +37,16 @@ describe("netguardModel", () => {
     expect(buildRemote("any", "ignored")).toEqual({ kind: "any" });
   });
 
-  // The compiler refuses group and domain remotes on every plan, so offering
-  // them let an operator author a rule no plan could ever apply.
+  // The compiler refuses domain remotes on every plan, so offering one let an
+  // operator author a rule no plan could ever apply. A node group remote
+  // expands to its members' addresses (design 32 D3), so it is offered.
   it("offers only the remote kinds the compiler lowers", () => {
-    expect(remoteKindOptions("any").map((option) => option.value)).toEqual(["any", "cidr", "node", "zone"]);
+    expect(remoteKindOptions("any").map((option) => option.value)).toEqual(["any", "cidr", "node", "group", "zone"]);
     expect(remoteKindOptions("cidr").every((option) => !option.disabled)).toBe(true);
-    const loaded = remoteKindOptions("group");
-    expect(loaded.at(-1)).toEqual({ value: "group", label: "group (not compiled)", disabled: true });
-    expect(unsupportedRemoteReason("group")).toContain("not compiled");
+    expect(remoteKindOptions("any").find((option) => option.value === "group")?.label).toBe("node group");
+    const loaded = remoteKindOptions("domain");
+    expect(loaded.at(-1)).toEqual({ value: "domain", label: "domain (not compiled)", disabled: true });
+    expect(unsupportedRemoteReason("group")).toBeUndefined();
     expect(unsupportedRemoteReason("domain")).toContain("CIDR");
     expect(unsupportedRemoteReason("zone")).toBeUndefined();
   });
@@ -162,5 +165,14 @@ describe("deleteQuestion", () => {
       "This removes the security group web from NetGuard. 1 node still references it; it keeps its current rules until it is planned again.",
     );
     expect(deleteQuestion("zone", "Office VPN", 0)).toBe("This removes the trusted zone Office VPN from NetGuard. No node references it.");
+  });
+});
+
+describe("missingRemoteReason", () => {
+  it("refuses a remote that names nothing", () => {
+    expect(missingRemoteReason("group", "")).toBe("choose the node group the rule lets in.");
+    expect(missingRemoteReason("cidr", "  ")).toBe("enter the CIDR the rule lets in.");
+    expect(missingRemoteReason("group", "grp_web")).toBeUndefined();
+    expect(missingRemoteReason("any", "")).toBeUndefined();
   });
 });
