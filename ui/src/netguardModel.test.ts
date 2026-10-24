@@ -3,8 +3,10 @@ import { describe, expect, it } from "vitest";
 import {
   buildRemote,
   deleteQuestion,
+  directionOptions,
   remoteKindOptions,
   unsupportedRemoteReason,
+  unsupportedRuleReason,
   driftTone,
   endSentence,
   formatRanges,
@@ -44,6 +46,15 @@ describe("netguardModel", () => {
     expect(unsupportedRemoteReason("group")).toContain("not compiled");
     expect(unsupportedRemoteReason("domain")).toContain("CIDR");
     expect(unsupportedRemoteReason("zone")).toBeUndefined();
+  });
+
+  // The compiler refuses egress too ("egress stays with netpolicy").
+  it("offers only the ingress direction and refuses a loaded egress rule", () => {
+    expect(directionOptions("ingress")).toEqual([{ value: "ingress", label: "ingress", disabled: false }]);
+    expect(directionOptions("egress").at(-1)).toEqual({ value: "egress", label: "egress (not compiled)", disabled: true });
+    expect(unsupportedRuleReason({ direction: "egress", remote: { kind: "any" } })).toContain("ingress");
+    expect(unsupportedRuleReason({ direction: "ingress", remote: { kind: "domain" } })).toContain("remove the rule");
+    expect(unsupportedRuleReason({ direction: "ingress", remote: { kind: "cidr" } })).toBeUndefined();
   });
 });
 

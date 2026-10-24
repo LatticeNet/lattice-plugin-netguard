@@ -108,9 +108,28 @@ export function remoteKindOptions(current: string): RemoteKindOption[] {
 /** Why a remote kind cannot be saved, or undefined when the compiler lowers it. */
 export function unsupportedRemoteReason(kind: string): string | undefined {
   if ((GUARD_REMOTE_KINDS as readonly string[]).includes(kind)) return undefined;
-  if (kind === "group") return "group remotes are not compiled yet; name the member nodes or their CIDRs instead.";
-  if (kind === "domain") return "domain remotes are not accepted inbound, since a name is not a trustworthy source; use a CIDR.";
-  return `remote kind "${kind}" is not supported.`;
+  if (kind === "group") return "group remotes are not compiled yet. Change the remote to the member nodes or their CIDRs, or remove the rule.";
+  if (kind === "domain") return "domain remotes are not accepted inbound, since a name is not a trustworthy source. Change the remote to a CIDR, or remove the rule.";
+  return `remote kind "${kind}" is not supported. Change the remote, or remove the rule.`;
+}
+
+/**
+ * The guard table filters inbound traffic only: the compiler refuses an
+ * egress rule ("egress stays with netpolicy"), so the editor offers ingress,
+ * and a loaded egress rule keeps its direction visible, disabled and marked.
+ */
+export function directionOptions(current: string): RemoteKindOption[] {
+  const options: RemoteKindOption[] = [{ value: "ingress", label: "ingress", disabled: false }];
+  if (current && current !== "ingress") options.push({ value: current, label: `${current} (not compiled)`, disabled: true });
+  return options;
+}
+
+/** Why a rule cannot be saved, or undefined when the compiler lowers it. */
+export function unsupportedRuleReason(rule: Pick<GuardRule, "direction" | "remote">): string | undefined {
+  if (rule.direction !== "ingress") {
+    return "the guard table filters inbound traffic only, and outbound rules belong to the outbound policy. Change the direction to ingress, or remove the rule.";
+  }
+  return unsupportedRemoteReason(rule.remote?.kind ?? "any");
 }
 
 export function buildRemote(kind: string, value: string): Remote {

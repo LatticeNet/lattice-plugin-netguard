@@ -14,9 +14,10 @@ import {
   buildRemote,
   formatRanges,
   parseRanges,
+  directionOptions,
   remoteKindOptions,
   remoteValue,
-  unsupportedRemoteReason,
+  unsupportedRuleReason,
   type GuardRule,
   type SecurityGroup,
 } from "../netguardModel";
@@ -99,9 +100,9 @@ function submit(): void {
     localError.value = "A group needs a name.";
     return;
   }
-  const refused = form.rules.findIndex((rule) => unsupportedRemoteReason(rule.remote.kind));
+  const refused = form.rules.findIndex((rule) => unsupportedRuleReason(rule));
   if (refused >= 0) {
-    localError.value = `Rule ${refused + 1}: ${unsupportedRemoteReason(form.rules[refused]!.remote.kind)}`;
+    localError.value = `Rule ${refused + 1}: ${unsupportedRuleReason(form.rules[refused]!)}`;
     return;
   }
   let rules: GuardRule[];
@@ -168,7 +169,11 @@ function submit(): void {
             </label>
             <label class="ng-field">
               <span>Direction</span>
-              <select v-model="rule.direction"><option value="ingress">ingress</option><option value="egress">egress</option></select>
+              <select v-model="rule.direction">
+                <option v-for="option in directionOptions(rule.direction)" :key="option.value" :value="option.value" :disabled="option.disabled">
+                  {{ option.label }}
+                </option>
+              </select>
             </label>
             <label class="ng-field">
               <span>Protocol</span>
