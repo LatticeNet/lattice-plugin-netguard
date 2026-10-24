@@ -21,15 +21,52 @@ function count(n: number, one: string, many: string): string {
   return `${n} ${n === 1 ? one : many}`;
 }
 
-/** "2 compiled, 1 not managed", "no members". */
+/**
+ * "2 managed, 1 not managed", "no members". Managed says NetGuard compiles the
+ * groups there once a plan is approved, not that a plan is in force.
+ */
 export function membersLine(binding: NodeGroupBinding): string {
   const active = binding.members.filter((member) => member.state === "active").length;
   const inactive = binding.members.length - active;
   if (!binding.members.length) return "no members";
   const parts = [];
-  if (active) parts.push(`${active} compiled`);
+  if (active) parts.push(`${active} managed`);
   if (inactive) parts.push(`${inactive} not managed`);
   return parts.join(", ");
+}
+
+/** A node group in the binding picker: "lab (2 members, none managed)". */
+export function nodeGroupChoiceLabel(choice: NodeGroupChoice, managed: ReadonlySet<string>): string {
+  const total = choice.members.length;
+  const managedCount = choice.members.filter((id) => managed.has(id)).length;
+  const members = count(total, "member", "members");
+  if (!total) return `${choice.name} (no members)`;
+  return `${choice.name} (${members}, ${managedCount ? `${managedCount} managed` : "none managed"})`;
+}
+
+/**
+ * The Used by cell: direct nodes, then node groups as a count, so one long
+ * name cannot widen the column; the names go in the cell's title.
+ * "3 nodes", "3 nodes · node group web", "1 node · 2 node groups".
+ */
+export function usedByLabel(direct: number, through: readonly string[], nodeGroupsUnknown = false): string {
+  const parts = direct || (!through.length && !nodeGroupsUnknown) ? [count(direct, "node", "nodes")] : [];
+  if (through.length === 1) parts.push(`node group ${through[0]}`);
+  else if (through.length > 1) parts.push(count(through.length, "node group", "node groups"));
+  if (nodeGroupsUnknown) parts.push("node groups not read");
+  return parts.join(" · ");
+}
+
+/**
+ * Why a security group cannot be deleted yet, or undefined: NetGuard refuses
+ * the delete while a node or a node group binds it.
+ */
+export function deleteBlockedReason(direct: number, through: readonly string[]): string | undefined {
+  const holders: string[] = [];
+  if (direct) holders.push(count(direct, "node", "nodes"));
+  if (through.length) holders.push(`${through.length === 1 ? "node group" : "node groups"} ${through.join(", ")}`);
+  if (!holders.length) return undefined;
+  return `Bound to ${holders.join(" and ")}; detach it there first`;
 }
 
 /** The node groups that bind each security group, by security group id, names sorted. */
@@ -53,10 +90,19 @@ export function bindableGroups(groups: readonly SecurityGroup[], listed: readonl
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
-/** The node groups that have no binding yet, for a new one; sorted by name. */
+/**
+ * The node groups that bind no security group, for a new binding. A stored
+ * binding whose list is empty counts as unbound; saving over it carries its
+ * version (storedVersion).
+ */
 export function unboundNodeGroups(choices: readonly NodeGroupChoice[], bindings: readonly NodeGroupBinding[]): NodeGroupChoice[] {
   const bound = new Set(bindings.filter((binding) => binding.security_group_ids.length).map((binding) => binding.group_id));
   return choices.filter((choice) => !bound.has(choice.id));
+}
+
+/** The version a write for groupId must carry: its stored binding's, even an empty one, or 0. */
+export function storedVersion(bindings: readonly NodeGroupBinding[], groupId: string): number {
+  return bindings.find((binding) => binding.group_id === groupId)?.version ?? 0;
 }
 
 /** The list with the item at `index` moved by `delta`, or the list unchanged at an edge. */

@@ -17,6 +17,7 @@ import {
   directionOptions,
   remoteKindOptions,
   remoteValue,
+  missingRemoteReason,
   unsupportedRuleReason,
   type GuardRule,
   type NodeGroupChoice,
@@ -106,6 +107,12 @@ function submit(): void {
   const refused = form.rules.findIndex((rule) => unsupportedRuleReason(rule));
   if (refused >= 0) {
     localError.value = `Rule ${refused + 1}: ${unsupportedRuleReason(form.rules[refused]!)}`;
+    return;
+  }
+  const blank = form.rules.findIndex((rule) => !rule.disabled && missingRemoteReason(rule.remote.kind, rule.remoteText));
+  if (blank >= 0) {
+    const rule = form.rules[blank]!;
+    localError.value = `Rule ${blank + 1}: ${missingRemoteReason(rule.remote.kind, rule.remoteText)}`;
     return;
   }
   let rules: GuardRule[];

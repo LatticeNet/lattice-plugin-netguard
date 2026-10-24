@@ -3,13 +3,17 @@ import { describe, expect, it } from "vitest";
 import type { NodeGroupBinding, NodeGroupPlanResult, SecurityGroup } from "./netguardModel";
 import {
   bindableGroups,
+  deleteBlockedReason,
   membersLine,
   moveItem,
+  nodeGroupChoiceLabel,
   nodeGroupsBySecurityGroup,
   planFollowUp,
   planGroupLabel,
   planHeadline,
+  storedVersion,
   unboundNodeGroups,
+  usedByLabel,
 } from "./nodeGroups";
 
 function binding(over: Partial<NodeGroupBinding>): NodeGroupBinding {
@@ -21,13 +25,13 @@ function group(id: string, name: string, over: Partial<SecurityGroup> = {}): Sec
 }
 
 describe("node group bindings", () => {
-  it("counts compiled and unmanaged members", () => {
+  it("counts managed and unmanaged members", () => {
     expect(membersLine(binding({}))).toBe("no members");
     expect(membersLine(binding({ members: [
       { node_id: "a", state: "active" },
       { node_id: "b", state: "active" },
       { node_id: "c", state: "inactive", reason: "group binding inactive: node not managed" },
-    ] }))).toBe("2 compiled, 1 not managed");
+    ] }))).toBe("2 managed, 1 not managed");
     expect(membersLine(binding({ members: [{ node_id: "c", state: "inactive" }] }))).toBe("1 not managed");
   });
 
@@ -80,5 +84,35 @@ describe("node group bindings", () => {
     expect(planGroupLabel({ id: "sg-web", name: "web" })).toBe("web");
     expect(planGroupLabel({ id: "sg-web", name: "web", via_node_group: { id: "grp_edge", name: "edge" } })).toBe("web via node group edge");
     expect(planGroupLabel({ id: "sg-web", via_node_group: { id: "grp_edge" } })).toBe("sg-web via node group grp_edge");
+  });
+
+  it("says in the picker how many members NetGuard manages", () => {
+    const managed = new Set(["a"]);
+    expect(nodeGroupChoiceLabel({ id: "grp_lab", name: "lab", members: ["b", "c"] }, managed)).toBe("lab (2 members, none managed)");
+    expect(nodeGroupChoiceLabel({ id: "grp_web", name: "web", members: ["a", "b"] }, managed)).toBe("web (2 members, 1 managed)");
+    expect(nodeGroupChoiceLabel({ id: "grp_empty", name: "empty", members: [] }, managed)).toBe("empty (no members)");
+  });
+
+  it("keeps the Used by cell short and says when node groups were not read", () => {
+    expect(usedByLabel(3, [])).toBe("3 nodes");
+    expect(usedByLabel(0, [])).toBe("0 nodes");
+    expect(usedByLabel(3, ["web"])).toBe("3 nodes · node group web");
+    expect(usedByLabel(0, ["edge", "a-rather-long-node-group-name"])).toBe("2 node groups");
+    expect(usedByLabel(1, [], true)).toBe("1 node · node groups not read");
+    expect(usedByLabel(0, [], true)).toBe("node groups not read");
+  });
+
+  it("says why a bound security group cannot be deleted", () => {
+    expect(deleteBlockedReason(0, [])).toBeUndefined();
+    expect(deleteBlockedReason(1, [])).toBe("Bound to 1 node; detach it there first");
+    expect(deleteBlockedReason(0, ["asia-edge"])).toBe("Bound to node group asia-edge; detach it there first");
+    expect(deleteBlockedReason(2, ["edge", "web"])).toBe("Bound to 2 nodes and node groups edge, web; detach it there first");
+  });
+
+  it("writes over an empty stored binding with its version", () => {
+    const bindings = [binding({ group_id: "grp_lab", version: 3 })];
+    expect(storedVersion(bindings, "grp_lab")).toBe(3);
+    expect(storedVersion(bindings, "grp_new")).toBe(0);
+    expect(unboundNodeGroups([{ id: "grp_lab", name: "lab", members: [] }], bindings).map((choice) => choice.id)).toEqual(["grp_lab"]);
   });
 });

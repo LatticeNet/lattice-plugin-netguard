@@ -4,6 +4,7 @@ import {
   buildRemote,
   deleteQuestion,
   directionOptions,
+  missingRemoteReason,
   remoteKindOptions,
   unsupportedRemoteReason,
   unsupportedRuleReason,
@@ -42,6 +43,7 @@ describe("netguardModel", () => {
   it("offers only the remote kinds the compiler lowers", () => {
     expect(remoteKindOptions("any").map((option) => option.value)).toEqual(["any", "cidr", "node", "group", "zone"]);
     expect(remoteKindOptions("cidr").every((option) => !option.disabled)).toBe(true);
+    expect(remoteKindOptions("any").find((option) => option.value === "group")?.label).toBe("node group");
     const loaded = remoteKindOptions("domain");
     expect(loaded.at(-1)).toEqual({ value: "domain", label: "domain (not compiled)", disabled: true });
     expect(unsupportedRemoteReason("group")).toBeUndefined();
@@ -163,5 +165,14 @@ describe("deleteQuestion", () => {
       "This removes the security group web from NetGuard. 1 node still references it; it keeps its current rules until it is planned again.",
     );
     expect(deleteQuestion("zone", "Office VPN", 0)).toBe("This removes the trusted zone Office VPN from NetGuard. No node references it.");
+  });
+});
+
+describe("missingRemoteReason", () => {
+  it("refuses a remote that names nothing", () => {
+    expect(missingRemoteReason("group", "")).toBe("choose the node group the rule lets in.");
+    expect(missingRemoteReason("cidr", "  ")).toBe("enter the CIDR the rule lets in.");
+    expect(missingRemoteReason("group", "grp_web")).toBeUndefined();
+    expect(missingRemoteReason("any", "")).toBeUndefined();
   });
 });

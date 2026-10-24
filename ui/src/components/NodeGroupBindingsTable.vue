@@ -64,7 +64,7 @@ function inactiveTitle(binding: NodeGroupBinding): string {
     <tbody>
       <PcRow v-for="binding in bindings" :key="binding.group_id">
         <td class="pc-name" data-stack="name">
-          <strong>{{ binding.group_name || binding.group_id }}</strong>
+          <strong :title="binding.group_name || binding.group_id">{{ binding.group_name || binding.group_id }}</strong>
         </td>
         <PcTd label="Security groups" stack="summary">
           <span v-if="!binding.security_group_ids.length" class="ng-absent">None bound</span>

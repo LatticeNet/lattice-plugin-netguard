@@ -24,6 +24,7 @@ import {
 
 import { allowsPreview, ruleSentence, usedByNodes, type ExposureContext } from "../exposure";
 import type { GuardNode, GuardRule, SecurityGroup } from "../netguardModel";
+import { deleteBlockedReason, usedByLabel as usedByText } from "../nodeGroups";
 import type { MenuItem } from "../rowMenu";
 import RowMenu from "./RowMenu.vue";
 
@@ -35,6 +36,8 @@ const props = defineProps<{
   canAdmin: boolean;
   /** The node groups that bind each security group, by id (design 32 S4). */
   nodeGroupsBy?: ReadonlyMap<string, readonly string[]>;
+  /** True while the node-group read failed, so Used by may leave some out. */
+  nodeGroupsUnknown?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -45,10 +48,14 @@ const emit = defineEmits<{
 
 const COLUMNS = 4;
 
-const MENU: MenuItem[] = [
-  { key: "edit", label: "Edit rules" },
-  { key: "delete", label: "Delete group", danger: true },
-];
+/** Delete is refused by NetGuard while a node or a node group binds the group, so the menu says so first. */
+function menu(group: SecurityGroup): MenuItem[] {
+  const blocked = deleteBlockedReason(usedBy(group), throughOf(group));
+  return [
+    { key: "edit", label: "Edit rules" },
+    { key: "delete", label: "Delete group", danger: true, disabled: Boolean(blocked), reason: blocked },
+  ];
+}
 
 function onMenu(key: string, group: SecurityGroup): void {
   if (key === "edit") emit("edit", group);
@@ -72,21 +79,26 @@ function rulesWord(count: number): string {
   return count === 1 ? "1 rule" : `${count} rules`;
 }
 
-function nodesWord(count: number): string {
-  return count === 1 ? "1 node" : `${count} nodes`;
-}
-
 function usedBy(group: SecurityGroup): number {
   return usedByNodes(props.nodes, "group_ids", group.id);
 }
 
-/** "3 nodes", "3 nodes · node group web", "node groups edge, web". */
+function throughOf(group: SecurityGroup): readonly string[] {
+  return props.nodeGroupsBy?.get(group.id) ?? [];
+}
+
+/** "3 nodes", "3 nodes · node group web", "1 node · 2 node groups". */
 function usedByLabel(group: SecurityGroup): string {
-  const direct = usedBy(group);
-  const through = props.nodeGroupsBy?.get(group.id) ?? [];
-  const parts = direct || !through.length ? [nodesWord(direct)] : [];
-  if (through.length) parts.push(`${through.length === 1 ? "node group" : "node groups"} ${through.join(", ")}`);
-  return parts.join(" · ");
+  return usedByText(usedBy(group), throughOf(group), props.nodeGroupsUnknown);
+}
+
+/** The cell's title names every node group the label counts. */
+function usedByTitle(group: SecurityGroup): string {
+  const through = throughOf(group);
+  const nodes = usedBy(group) === 1 ? "1 node" : `${usedBy(group)} nodes`;
+  const lead = `Attached to ${nodes}`;
+  if (!through.length) return props.nodeGroupsUnknown ? `${lead}; node groups were not read` : lead;
+  return `${lead} and bound to ${through.length === 1 ? "node group" : "node groups"} ${through.join(", ")}`;
 }
 
 /** The merged preview, only where merging says something the rule list does not. */
@@ -140,9 +152,9 @@ function firstRuleId(group: SecurityGroup): string {
         <PcTd label="Rules" stack="summary" :title="summary(group)">
           <span class="pc-group-summary">{{ summary(group) }}</span>
         </PcTd>
-        <PcTd label="Used by" numeric :title="`Attached to ${usedByLabel(group)}`">{{ usedByLabel(group) }}</PcTd>
+        <PcTd label="Used by" numeric :title="usedByTitle(group)">{{ usedByLabel(group) }}</PcTd>
         <PcActionsCell v-if="canAdmin">
-          <RowMenu :label="`Actions for ${group.name}`" :items="MENU" @select="(key) => onMenu(key, group)" />
+          <RowMenu :label="`Actions for ${group.name}`" :items="menu(group)" @select="(key) => onMenu(key, group)" />
         </PcActionsCell>
       </PcGroupRow>
 

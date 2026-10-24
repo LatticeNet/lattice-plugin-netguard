@@ -139,7 +139,7 @@ export interface RemoteKindOption {
  * select does not go blank and the operator can see what to replace.
  */
 export function remoteKindOptions(current: string): RemoteKindOption[] {
-  const options: RemoteKindOption[] = GUARD_REMOTE_KINDS.map((kind) => ({ value: kind, label: kind, disabled: false }));
+  const options: RemoteKindOption[] = GUARD_REMOTE_KINDS.map((kind) => ({ value: kind, label: kind === "group" ? "node group" : kind, disabled: false }));
   if (current && !(GUARD_REMOTE_KINDS as readonly string[]).includes(current)) {
     options.push({ value: current, label: `${current} (not compiled)`, disabled: true });
   }
@@ -170,6 +170,16 @@ export function unsupportedRuleReason(rule: Pick<GuardRule, "direction" | "remot
     return "the guard table filters inbound traffic only, and outbound rules belong to the outbound policy. Change the direction to ingress, or remove the rule.";
   }
   return unsupportedRemoteReason(rule.remote?.kind ?? "any");
+}
+
+/** Why a remote cannot be saved without its value, or undefined when it has one. */
+export function missingRemoteReason(kind: string, value: string): string | undefined {
+  if (value.trim()) return undefined;
+  if (kind === "group") return "choose the node group the rule lets in.";
+  if (kind === "cidr") return "enter the CIDR the rule lets in.";
+  if (kind === "node") return "enter the node the rule lets in.";
+  if (kind === "zone") return "choose the trusted zone the rule lets in.";
+  return undefined;
 }
 
 export function buildRemote(kind: string, value: string): Remote {

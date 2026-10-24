@@ -244,9 +244,9 @@ function lintTone(severity: string): "error" | "warning" {
             <dd v-else>{{ row.groupIds.length ? row.groupIds.join(', ') : 'none attached' }}</dd>
             <template v-if="rulesRead && derivedGroups.length">
               <dt>Through node groups</dt>
-              <dd>
-                <span v-if="derivedGroups.some((group) => group.inactive)" class="ng-subtle">Group binding inactive: node not managed. </span>
+              <dd :class="derivedGroups.some((group) => group.inactive) ? 'ng-subtle' : undefined">
                 {{ derivedGroups.map(derivedLabel).join(', ') }}
+                <PcKindChip v-if="derivedGroups.some((group) => group.inactive)" tone="info" label="inactive" title="Group binding inactive: node not managed. Adopt the node to apply it." />
               </dd>
             </template>
             <dt>Trusted zones</dt>

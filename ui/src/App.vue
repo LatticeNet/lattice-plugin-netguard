@@ -369,6 +369,9 @@ async function refresh(background = false): Promise<void> {
   const failures: string[] = [];
   let lostOverview = false;
   let lostReality = false;
+  // The node-group read runs beside the others, not after them, and lands only
+  // if this refresh is still the newest one.
+  const nodeGroupsRead = readNodeGroupBindings();
   try {
     overview.value = await call<Overview>("overview");
   } catch (cause) {
@@ -381,8 +384,9 @@ async function refresh(background = false): Promise<void> {
     lostReality = true;
     failures.push(safeErrorMessage(cause, "Reality snapshots could not be loaded"));
   }
-  await loadNodeGroupBindings();
+  const nodeGroupsResult = await nodeGroupsRead;
   if (epoch !== refreshEpoch) return;
+  applyNodeGroupBindings(nodeGroupsResult);
   overviewFailed.value = lostOverview;
   realityFailed.value = lostReality;
   // Partial failure is reported as partial, never rounded up to a working
@@ -851,18 +855,55 @@ const canBindNodeGroups = computed(() =>
   ["upsert_node_group_binding", "delete_node_group_binding"].every((method) => canCall(init.value, SERVICE, method)),
 );
 const canPlanNodeGroups = computed(() => canCall(init.value, SERVICE, "plan_node_groups"));
-const nodeGroupsBy = computed(() => nodeGroupsBySecurityGroup(nodeGroupBindings.value));
+// Every stored binding is kept, an empty one too, since a write over it must
+// carry its version; the table lists only those that bind something.
+const shownNodeGroupBindings = computed(() => nodeGroupBindings.value.filter((binding) => binding.security_group_ids.length));
+const nodeGroupsBy = computed(() => nodeGroupsBySecurityGroup(shownNodeGroupBindings.value));
+const managedNodeIds = computed(() => new Set(overview.value.nodes.filter((node) => node.binding?.managed).map((node) => node.node_id)));
 
-async function loadNodeGroupBindings(): Promise<void> {
-  if (!canReadNodeGroups.value) return;
+type NodeGroupsRead = { ok: true; value: NodeGroupBindingsResponse } | { ok: false; error: string } | undefined;
+
+async function readNodeGroupBindings(): Promise<NodeGroupsRead> {
+  if (!canReadNodeGroups.value) return undefined;
   try {
-    const result = await call<NodeGroupBindingsResponse>("node_group_bindings");
-    nodeGroupBindings.value = (result.bindings ?? []).filter((binding) => binding.security_group_ids.length);
-    nodeGroupChoices.value = result.node_groups ?? [];
-    nodeGroupsError.value = "";
+    return { ok: true, value: await call<NodeGroupBindingsResponse>("node_group_bindings") };
   } catch (cause) {
-    nodeGroupsError.value = safeErrorMessage(cause, "The node-group bindings could not be loaded");
+    return { ok: false, error: safeErrorMessage(cause, "The node-group bindings could not be loaded") };
   }
+}
+
+function applyNodeGroupBindings(read: NodeGroupsRead): void {
+  if (!read) return;
+  if (!read.ok) {
+    nodeGroupsError.value = read.error;
+    return;
+  }
+  nodeGroupBindings.value = read.value.bindings ?? [];
+  nodeGroupChoices.value = read.value.node_groups ?? [];
+  nodeGroupsError.value = "";
+}
+
+// After a save or an unbind the page offers the next step, planning the
+// members, on the notice itself; the binding row may be gone by then. The
+// action belongs to that one message: any later notice replaces it.
+const noticePlan = ref<{ message: string; target: NodeGroupBinding }>();
+const noticePlanTarget = computed(() => (noticePlan.value && noticePlan.value.message === notice.value ? noticePlan.value.target : undefined));
+
+function reportNodeGroup(message: string, target: NodeGroupBinding): void {
+  report(message);
+  noticePlan.value = canPlanNodeGroups.value ? { message, target } : undefined;
+}
+
+function dismissNotice(): void {
+  notice.value = "";
+  noticePlan.value = undefined;
+}
+
+function planFromNotice(): void {
+  const target = noticePlanTarget.value;
+  if (!target) return;
+  dismissNotice();
+  openNodeGroupPlan(target);
 }
 
 const nodeGroupDialog = ref(false);
@@ -881,7 +922,7 @@ async function saveNodeGroupBinding(payload: Record<string, unknown>): Promise<v
   nodeGroupError.value = "";
   try {
     const saved = await call<NodeGroupBinding>("upsert_node_group_binding", payload);
-    report(`Node group ${saved.group_name || saved.group_id} saved. No node changes until its members are planned and approved.`);
+    reportNodeGroup(`Node group ${saved.group_name || saved.group_id} saved. No node changes until its members are planned and approved.`, saved);
     nodeGroupDialog.value = false;
     await refresh(true);
     await reloadOpenReviews();
@@ -898,6 +939,7 @@ const unbindError = ref("");
 
 function askUnbind(binding: NodeGroupBinding): void {
   unbindError.value = "";
+  nodeGroupDialog.value = false;
   unbindTarget.value = binding;
 }
 
@@ -908,7 +950,7 @@ async function confirmUnbind(): Promise<void> {
   unbindError.value = "";
   try {
     await call("delete_node_group_binding", { group_id: target.group_id });
-    report(`Node group ${target.group_name || target.group_id} unbound. Its members keep the groups until they are planned again.`);
+    reportNodeGroup(`Node group ${target.group_name || target.group_id} unbound. Its members keep the groups until they are planned again.`, target);
     unbindTarget.value = undefined;
     await refresh(true);
     await reloadOpenReviews();
@@ -941,15 +983,17 @@ async function confirmNodeGroupPlan(): Promise<void> {
   if (!target) return;
   nodeGroupPlanning.value = true;
   nodeGroupPlanError.value = "";
+  let planned = false;
   try {
     nodeGroupPlanResult.value = await call<NodeGroupPlanResult>("plan_node_groups", { group_id: target.group_id });
-    await refresh(true);
-    await reloadOpenReviews();
+    planned = true;
   } catch (cause) {
     nodeGroupPlanError.value = safeErrorMessage(cause, "NetGuard did not plan the node group. Nothing has changed on any node.");
   } finally {
     nodeGroupPlanning.value = false;
   }
+  // The answer is in and the dialog may close; the page catches up behind it.
+  if (planned) void refresh(true).then(reloadOpenReviews);
 }
 
 const dialogNodeId = ref("");
@@ -1291,8 +1335,9 @@ function tabCount(value: number, failed: boolean): number | null {
       <p class="ng-pre-line">{{ error }}</p>
       <template #actions><PcButton compact :busy="refreshing" @click="refresh(true)">Try again</PcButton></template>
     </PcNotice>
-    <PcNotice v-if="notice" tone="success" dismissible @dismiss="notice = ''">
+    <PcNotice v-if="notice" tone="success" dismissible @dismiss="dismissNotice">
       <p>{{ notice }}</p>
+      <template v-if="noticePlanTarget" #actions><PcButton compact @click="planFromNotice">Plan members now</PcButton></template>
     </PcNotice>
     <PcNotice v-if="realityTruncated" tone="warning" title="This fleet is larger than this panel paged through">
       <p>The exposure below covers only the nodes listed. Narrow the view before trusting the totals.</p>
@@ -1439,6 +1484,7 @@ function tabCount(value: number, failed: boolean): number | null {
         :is-open="groupOpen"
         :can-admin="canAdmin"
         :node-groups-by="nodeGroupsBy"
+        :node-groups-unknown="Boolean(nodeGroupsError)"
         @toggle="toggleGroup"
         @edit="openGroup"
         @delete="(group) => askDelete('group', group.id, group.name)"
@@ -1465,10 +1511,13 @@ function tabCount(value: number, failed: boolean): number | null {
           <PcButton v-if="canBindNodeGroups && canReadNodeGroups && !nodeGroupsError && overview.groups.length" @click="openNodeGroupBinding()"><template #icon><Plus :size="15" /></template>Bind to a node group</PcButton>
         </header>
         <PcNotice v-if="!canReadNodeGroups" tone="info"><p>Reading node-group bindings needs netguard:read and group:read on a session that is not confined to some nodes.</p></PcNotice>
-        <PcNotice v-else-if="nodeGroupsError" tone="warning" title="Node-group bindings were not read"><p>{{ nodeGroupsError }}</p></PcNotice>
+        <PcNotice v-else-if="nodeGroupsError" tone="warning" title="Node-group bindings were not read">
+          <p>{{ endSentence(nodeGroupsError) }} Used by counts above leave node groups out until they are read.</p>
+          <template #actions><PcButton compact :busy="refreshing" @click="refresh(true)">Try again</PcButton></template>
+        </PcNotice>
         <NodeGroupBindingsTable
-          v-else-if="nodeGroupBindings.length"
-          :bindings="nodeGroupBindings"
+          v-else-if="shownNodeGroupBindings.length"
+          :bindings="shownNodeGroupBindings"
           :groups="overview.groups"
           :can-admin="canBindNodeGroups"
           :can-plan="canPlanNodeGroups"
@@ -1574,11 +1623,13 @@ function tabCount(value: number, failed: boolean): number | null {
       :binding="editingNodeGroup"
       :bindings="nodeGroupBindings"
       :node-groups="nodeGroupChoices"
+      :managed="managedNodeIds"
       :groups="overview.groups"
       :saving="nodeGroupSaving"
       :error="nodeGroupError"
       @close="nodeGroupDialog = false"
       @save="saveNodeGroupBinding"
+      @unbind="askUnbind"
     />
     <NodeGroupPlanDialog
       :open="Boolean(nodeGroupPlanTarget)"
@@ -1591,7 +1642,7 @@ function tabCount(value: number, failed: boolean): number | null {
     />
     <PcConfirmDialog
       :open="Boolean(unbindTarget)"
-      :title="`Unbind node group ${unbindTarget?.group_name ?? ''}?`"
+      :title="`Unbind node group ${unbindTarget?.group_name || unbindTarget?.group_id || ''}?`"
       confirm-label="Unbind"
       destructive
       :busy="unbinding"

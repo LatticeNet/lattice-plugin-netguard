@@ -86,7 +86,7 @@ function close(): void {
               <p v-for="finding in node.findings ?? []" :key="finding.code" class="ng-subtle">{{ finding.code }}: {{ finding.message }}</p>
             </li>
           </ul>
-          <p class="ng-subtle">A node blocked by the lockout lint can be planned on its own from its panel, where the risk can be reviewed and accepted.</p>
+          <p class="ng-subtle ng-subpanel-body">A node blocked by the lockout lint can be planned on its own from its panel, where the risk can be reviewed and accepted.</p>
         </section>
 
         <section v-if="result.inactive.length" class="ng-subpanel" aria-labelledby="ng-plan-inactive">
