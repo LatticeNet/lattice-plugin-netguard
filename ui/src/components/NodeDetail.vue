@@ -36,6 +36,7 @@ import {
   type GuardSuggestion,
   type GuardZone,
   type Review,
+  type SecurityGroup,
 } from "../netguardModel";
 import { stampUtc } from "../time";
 import { stateTone } from "../tones";
@@ -107,6 +108,12 @@ const listenerTally = computed(() => {
     .join(", ");
 });
 const interfaces = computed(() => reality.value?.interfaces ?? []);
+/** The groups this node's node groups bind, in compile order after its own (design 32 S4). */
+const derivedGroups = computed(() => props.row.intent?.derived_groups ?? []);
+function derivedLabel(group: SecurityGroup): string {
+  const via = group.via_node_group;
+  return via ? `${group.name || group.id} via ${via.name || via.id}` : group.name || group.id;
+}
 const foreignTables = computed(() => reality.value?.foreign_tables ?? []);
 const lint = computed(() => props.review?.findings ?? []);
 const blocking = computed(() => lint.value.some((finding) => finding.severity === "block"));
@@ -235,6 +242,13 @@ function lintTone(severity: string): "error" | "warning" {
             <dt>Security groups</dt>
             <dd v-if="!rulesRead" class="ng-subtle">not read</dd>
             <dd v-else>{{ row.groupIds.length ? row.groupIds.join(', ') : 'none attached' }}</dd>
+            <template v-if="rulesRead && derivedGroups.length">
+              <dt>Through node groups</dt>
+              <dd>
+                <span v-if="derivedGroups.some((group) => group.inactive)" class="ng-subtle">Group binding inactive: node not managed. </span>
+                {{ derivedGroups.map(derivedLabel).join(', ') }}
+              </dd>
+            </template>
             <dt>Trusted zones</dt>
             <dd v-if="!rulesRead" class="ng-subtle">not read</dd>
             <dd v-else>{{ row.zoneIds.length ? row.zoneIds.join(', ') : 'none' }}</dd>

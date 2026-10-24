@@ -55,6 +55,9 @@ import FilterSwitch from "./components/FilterSwitch.vue";
 import GroupEditor from "./components/GroupEditor.vue";
 import GroupsTable from "./components/GroupsTable.vue";
 import NodeDetail from "./components/NodeDetail.vue";
+import NodeGroupBindingEditor from "./components/NodeGroupBindingEditor.vue";
+import NodeGroupBindingsTable from "./components/NodeGroupBindingsTable.vue";
+import NodeGroupPlanDialog from "./components/NodeGroupPlanDialog.vue";
 import PortPicture from "./components/PortPicture.vue";
 import ZoneEditor from "./components/ZoneEditor.vue";
 import ZonesTable from "./components/ZonesTable.vue";
@@ -81,6 +84,10 @@ import {
   type GuardNodeReality,
   type GuardRule,
   type GuardZone,
+  type NodeGroupBinding,
+  type NodeGroupBindingsResponse,
+  type NodeGroupChoice,
+  type NodeGroupPlanResult,
   type Overview,
   type RealityDetailResponse,
   type RealityListResponse,
@@ -117,6 +124,7 @@ import {
   type PageState,
   type StateSender,
 } from "./pageState";
+import { nodeGroupsBySecurityGroup } from "./nodeGroups";
 import { coverageLabel, countPosture, joinPosture, type PostureRow } from "./posture";
 import type { MenuItem } from "./rowMenu";
 import { useNow } from "./clock";
@@ -373,6 +381,7 @@ async function refresh(background = false): Promise<void> {
     lostReality = true;
     failures.push(safeErrorMessage(cause, "Reality snapshots could not be loaded"));
   }
+  await loadNodeGroupBindings();
   if (epoch !== refreshEpoch) return;
   overviewFailed.value = lostOverview;
   realityFailed.value = lostReality;
@@ -827,6 +836,122 @@ async function saveZone(payload: Record<string, unknown>): Promise<void> {
 }
 
 /** The node a row-scoped dialog (binding, apply, adopt) is about. */
+// ── node-group bindings (design 32 S4) ───────────────────────────────────────
+//
+// Security groups bound to node groups. Reading them needs group:read as well
+// as netguard:read, since they name the group and its members, so a session
+// without it sees why the section is empty rather than an empty section. The
+// read failing leaves the rest of the page standing: it is one section.
+
+const nodeGroupBindings = ref<NodeGroupBinding[]>([]);
+const nodeGroupChoices = ref<NodeGroupChoice[]>([]);
+const nodeGroupsError = ref("");
+const canReadNodeGroups = computed(() => canCall(init.value, SERVICE, "node_group_bindings"));
+const canBindNodeGroups = computed(() =>
+  ["upsert_node_group_binding", "delete_node_group_binding"].every((method) => canCall(init.value, SERVICE, method)),
+);
+const canPlanNodeGroups = computed(() => canCall(init.value, SERVICE, "plan_node_groups"));
+const nodeGroupsBy = computed(() => nodeGroupsBySecurityGroup(nodeGroupBindings.value));
+
+async function loadNodeGroupBindings(): Promise<void> {
+  if (!canReadNodeGroups.value) return;
+  try {
+    const result = await call<NodeGroupBindingsResponse>("node_group_bindings");
+    nodeGroupBindings.value = (result.bindings ?? []).filter((binding) => binding.security_group_ids.length);
+    nodeGroupChoices.value = result.node_groups ?? [];
+    nodeGroupsError.value = "";
+  } catch (cause) {
+    nodeGroupsError.value = safeErrorMessage(cause, "The node-group bindings could not be loaded");
+  }
+}
+
+const nodeGroupDialog = ref(false);
+const editingNodeGroup = ref<NodeGroupBinding>();
+const nodeGroupSaving = ref(false);
+const nodeGroupError = ref("");
+
+function openNodeGroupBinding(binding?: NodeGroupBinding): void {
+  editingNodeGroup.value = binding;
+  nodeGroupError.value = "";
+  nodeGroupDialog.value = true;
+}
+
+async function saveNodeGroupBinding(payload: Record<string, unknown>): Promise<void> {
+  nodeGroupSaving.value = true;
+  nodeGroupError.value = "";
+  try {
+    const saved = await call<NodeGroupBinding>("upsert_node_group_binding", payload);
+    report(`Node group ${saved.group_name || saved.group_id} saved. No node changes until its members are planned and approved.`);
+    nodeGroupDialog.value = false;
+    await refresh(true);
+    await reloadOpenReviews();
+  } catch (cause) {
+    nodeGroupError.value = safeErrorMessage(cause, "The node-group binding could not be saved");
+  } finally {
+    nodeGroupSaving.value = false;
+  }
+}
+
+const unbindTarget = ref<NodeGroupBinding>();
+const unbinding = ref(false);
+const unbindError = ref("");
+
+function askUnbind(binding: NodeGroupBinding): void {
+  unbindError.value = "";
+  unbindTarget.value = binding;
+}
+
+async function confirmUnbind(): Promise<void> {
+  const target = unbindTarget.value;
+  if (!target) return;
+  unbinding.value = true;
+  unbindError.value = "";
+  try {
+    await call("delete_node_group_binding", { group_id: target.group_id });
+    report(`Node group ${target.group_name || target.group_id} unbound. Its members keep the groups until they are planned again.`);
+    unbindTarget.value = undefined;
+    await refresh(true);
+    await reloadOpenReviews();
+  } catch (cause) {
+    unbindError.value = safeErrorMessage(cause, "The node group could not be unbound");
+  } finally {
+    unbinding.value = false;
+  }
+}
+
+const nodeGroupPlanTarget = ref<NodeGroupBinding>();
+const nodeGroupPlanning = ref(false);
+const nodeGroupPlanError = ref("");
+const nodeGroupPlanResult = ref<NodeGroupPlanResult>();
+
+function openNodeGroupPlan(binding: NodeGroupBinding): void {
+  nodeGroupPlanTarget.value = binding;
+  nodeGroupPlanError.value = "";
+  nodeGroupPlanResult.value = undefined;
+}
+
+function closeNodeGroupPlan(): void {
+  if (nodeGroupPlanning.value) return;
+  nodeGroupPlanTarget.value = undefined;
+  nodeGroupPlanResult.value = undefined;
+}
+
+async function confirmNodeGroupPlan(): Promise<void> {
+  const target = nodeGroupPlanTarget.value;
+  if (!target) return;
+  nodeGroupPlanning.value = true;
+  nodeGroupPlanError.value = "";
+  try {
+    nodeGroupPlanResult.value = await call<NodeGroupPlanResult>("plan_node_groups", { group_id: target.group_id });
+    await refresh(true);
+    await reloadOpenReviews();
+  } catch (cause) {
+    nodeGroupPlanError.value = safeErrorMessage(cause, "NetGuard did not plan the node group. Nothing has changed on any node.");
+  } finally {
+    nodeGroupPlanning.value = false;
+  }
+}
+
 const dialogNodeId = ref("");
 const dialogRow = computed<PostureRow | undefined>(() => posture.value.find((row) => row.nodeId === dialogNodeId.value));
 const dialogReview = computed(() => reviews.value.get(dialogNodeId.value));
@@ -1301,7 +1426,7 @@ function tabCount(value: number, failed: boolean): number | null {
     </PcPanel>
 
     <PcPanel v-else-if="view === 'groups'" id="pc-panel-groups" role="tabpanel" aria-labelledby="pc-tab-groups" :data-stale="layerStale ? 'true' : undefined" :inert="layerStale || undefined">
-      <p class="ng-layer-note">Ordered rules, attached to one or more nodes. The chain policy stays default drop, so anything no rule accepts is dropped. A group folds its rules underneath.</p>
+      <p class="ng-layer-note">Ordered rules, attached to nodes directly or through a node group. The chain policy stays default drop, so anything no rule accepts is dropped. A group folds its rules underneath.</p>
       <PcEmptyState v-if="overviewFailed" kind="error" title="Security groups were not read">
         <p>The overview request failed, so nothing here is known. The notice above says why.</p>
         <template #actions><PcButton :busy="refreshing" @click="refresh(true)">Try again</PcButton></template>
@@ -1313,6 +1438,7 @@ function tabCount(value: number, failed: boolean): number | null {
         :context="exposureContext"
         :is-open="groupOpen"
         :can-admin="canAdmin"
+        :node-groups-by="nodeGroupsBy"
         @toggle="toggleGroup"
         @edit="openGroup"
         @delete="(group) => askDelete('group', group.id, group.name)"
@@ -1329,6 +1455,29 @@ function tabCount(value: number, failed: boolean): number | null {
           <PcButton variant="primary" @click="openGroup()"><template #icon><Plus :size="15" /></template>New group</PcButton>
         </template>
       </PcEmptyState>
+
+      <section v-if="!overviewFailed" class="ng-nodegroups" aria-labelledby="ng-nodegroups-title">
+        <header class="ng-nodegroups-head">
+          <div>
+            <h2 id="ng-nodegroups-title">Bound to node groups</h2>
+            <p class="ng-subtle">Every member NetGuard manages compiles these after its own groups, once a plan for it is approved. A member it does not manage is never adopted.</p>
+          </div>
+          <PcButton v-if="canBindNodeGroups && canReadNodeGroups && !nodeGroupsError && overview.groups.length" @click="openNodeGroupBinding()"><template #icon><Plus :size="15" /></template>Bind to a node group</PcButton>
+        </header>
+        <PcNotice v-if="!canReadNodeGroups" tone="info"><p>Reading node-group bindings needs netguard:read and group:read on a session that is not confined to some nodes.</p></PcNotice>
+        <PcNotice v-else-if="nodeGroupsError" tone="warning" title="Node-group bindings were not read"><p>{{ nodeGroupsError }}</p></PcNotice>
+        <NodeGroupBindingsTable
+          v-else-if="nodeGroupBindings.length"
+          :bindings="nodeGroupBindings"
+          :groups="overview.groups"
+          :can-admin="canBindNodeGroups"
+          :can-plan="canPlanNodeGroups"
+          @edit="openNodeGroupBinding"
+          @plan="openNodeGroupPlan"
+          @unbind="askUnbind"
+        />
+        <p v-else class="ng-subtle">No node group binds a security group. Security groups apply only to the nodes whose own binding lists them.</p>
+      </section>
     </PcPanel>
 
     <PcPanel v-else id="pc-panel-zones" role="tabpanel" aria-labelledby="pc-tab-zones" :data-stale="layerStale ? 'true' : undefined" :inert="layerStale || undefined">
@@ -1404,6 +1553,7 @@ function tabCount(value: number, failed: boolean): number | null {
     <GroupEditor
       :open="groupDialog"
       :group="editingGroup"
+      :node-groups="nodeGroupChoices"
       :draft-rules="groupDraft?.rules"
       :draft-name="groupDraft?.name"
       :saving="groupSaving"
@@ -1419,6 +1569,40 @@ function tabCount(value: number, failed: boolean): number | null {
       @close="zoneDialog = false"
       @save="saveZone"
     />
+    <NodeGroupBindingEditor
+      :open="nodeGroupDialog"
+      :binding="editingNodeGroup"
+      :bindings="nodeGroupBindings"
+      :node-groups="nodeGroupChoices"
+      :groups="overview.groups"
+      :saving="nodeGroupSaving"
+      :error="nodeGroupError"
+      @close="nodeGroupDialog = false"
+      @save="saveNodeGroupBinding"
+    />
+    <NodeGroupPlanDialog
+      :open="Boolean(nodeGroupPlanTarget)"
+      :binding="nodeGroupPlanTarget"
+      :planning="nodeGroupPlanning"
+      :error="nodeGroupPlanError"
+      :result="nodeGroupPlanResult"
+      @close="closeNodeGroupPlan"
+      @confirm="confirmNodeGroupPlan"
+    />
+    <PcConfirmDialog
+      :open="Boolean(unbindTarget)"
+      :title="`Unbind node group ${unbindTarget?.group_name ?? ''}?`"
+      confirm-label="Unbind"
+      destructive
+      :busy="unbinding"
+      @confirm="confirmUnbind"
+      @cancel="unbindTarget = unbinding ? unbindTarget : undefined"
+    >
+      <div class="ng-stack">
+        <p>Its members stop deriving these security groups. Nothing changes on any node until each is planned again and that plan is approved.</p>
+        <PcNotice v-if="unbindError"><p>{{ unbindError }}</p></PcNotice>
+      </div>
+    </PcConfirmDialog>
     <BindingEditor
       :open="bindingDialog"
       :node="dialogRow?.intent"

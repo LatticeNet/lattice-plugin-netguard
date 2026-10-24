@@ -33,6 +33,8 @@ const props = defineProps<{
   context: ExposureContext;
   isOpen: (groupId: string) => boolean;
   canAdmin: boolean;
+  /** The node groups that bind each security group, by id (design 32 S4). */
+  nodeGroupsBy?: ReadonlyMap<string, readonly string[]>;
 }>();
 
 const emit = defineEmits<{
@@ -76,6 +78,15 @@ function nodesWord(count: number): string {
 
 function usedBy(group: SecurityGroup): number {
   return usedByNodes(props.nodes, "group_ids", group.id);
+}
+
+/** "3 nodes", "3 nodes · node group web", "node groups edge, web". */
+function usedByLabel(group: SecurityGroup): string {
+  const direct = usedBy(group);
+  const through = props.nodeGroupsBy?.get(group.id) ?? [];
+  const parts = direct || !through.length ? [nodesWord(direct)] : [];
+  if (through.length) parts.push(`${through.length === 1 ? "node group" : "node groups"} ${through.join(", ")}`);
+  return parts.join(" · ");
 }
 
 /** The merged preview, only where merging says something the rule list does not. */
@@ -129,7 +140,7 @@ function firstRuleId(group: SecurityGroup): string {
         <PcTd label="Rules" stack="summary" :title="summary(group)">
           <span class="pc-group-summary">{{ summary(group) }}</span>
         </PcTd>
-        <PcTd label="Used by" numeric :title="`Attached to ${nodesWord(usedBy(group))}`">{{ nodesWord(usedBy(group)) }}</PcTd>
+        <PcTd label="Used by" numeric :title="`Attached to ${usedByLabel(group)}`">{{ usedByLabel(group) }}</PcTd>
         <PcActionsCell v-if="canAdmin">
           <RowMenu :label="`Actions for ${group.name}`" :items="MENU" @select="(key) => onMenu(key, group)" />
         </PcActionsCell>

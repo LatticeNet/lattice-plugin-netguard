@@ -760,6 +760,151 @@ ul {
   color: var(--muted-foreground);
 }
 
+/* ── node-group bindings (design 32 S4) ─────────────────────────────────── */
+
+/* The second half of the Security groups layer: the node groups that bind
+   groups. It sits under the groups table inside the same card, divided by
+   the card's own rule rather than a second card. */
+.ng-nodegroups {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border-top: 1px solid var(--border);
+}
+
+.ng-nodegroups-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.ng-nodegroups-head h2 {
+  font-size: var(--pc-text-sm);
+  font-weight: 650;
+}
+
+.ng-nodegroups-head p {
+  max-width: 68ch;
+  font-size: var(--pc-text-xs);
+  line-height: 1.5;
+}
+
+/* A compile order on one line that wraps between items, never inside one:
+   the number is the position nftables evaluates in. */
+.ng-order-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ng-order-line li {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-1);
+  white-space: nowrap;
+}
+
+.ng-ordered {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: var(--space-2) var(--space-3) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+.ng-ordered legend {
+  padding: 0 var(--space-1);
+  font-size: var(--pc-text-label);
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+
+.ng-ordered-list {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ng-ordered-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--row-h);
+  border-bottom: 1px solid var(--border);
+}
+
+.ng-ordered-item:last-child {
+  border-bottom: 0;
+}
+
+.ng-ordered-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.ng-ordered-actions {
+  display: inline-flex;
+  flex: 0 0 auto;
+  gap: var(--space-1);
+}
+
+.ng-ordered-add {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-2);
+}
+
+.ng-ordered-add .ng-field {
+  flex: 1 1 220px;
+}
+
+.ng-plan-list {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ng-plan-item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-3);
+  border-bottom: 1px solid var(--border);
+  font-size: var(--pc-text-xs);
+  line-height: 1.5;
+}
+
+.ng-plan-item:last-child {
+  border-bottom: 0;
+}
+
+.ng-plan-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
+.ng-plan-head strong {
+  font-size: var(--pc-text-sm);
+}
+
 /* ── Overview: attention, numbers, the ports picture ─────────────────────── */
 
 .ng-overview {

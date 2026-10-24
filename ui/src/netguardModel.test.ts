@@ -36,14 +36,15 @@ describe("netguardModel", () => {
     expect(buildRemote("any", "ignored")).toEqual({ kind: "any" });
   });
 
-  // The compiler refuses group and domain remotes on every plan, so offering
-  // them let an operator author a rule no plan could ever apply.
+  // The compiler refuses domain remotes on every plan, so offering one let an
+  // operator author a rule no plan could ever apply. A node group remote
+  // expands to its members' addresses (design 32 D3), so it is offered.
   it("offers only the remote kinds the compiler lowers", () => {
-    expect(remoteKindOptions("any").map((option) => option.value)).toEqual(["any", "cidr", "node", "zone"]);
+    expect(remoteKindOptions("any").map((option) => option.value)).toEqual(["any", "cidr", "node", "group", "zone"]);
     expect(remoteKindOptions("cidr").every((option) => !option.disabled)).toBe(true);
-    const loaded = remoteKindOptions("group");
-    expect(loaded.at(-1)).toEqual({ value: "group", label: "group (not compiled)", disabled: true });
-    expect(unsupportedRemoteReason("group")).toContain("not compiled");
+    const loaded = remoteKindOptions("domain");
+    expect(loaded.at(-1)).toEqual({ value: "domain", label: "domain (not compiled)", disabled: true });
+    expect(unsupportedRemoteReason("group")).toBeUndefined();
     expect(unsupportedRemoteReason("domain")).toContain("CIDR");
     expect(unsupportedRemoteReason("zone")).toBeUndefined();
   });
