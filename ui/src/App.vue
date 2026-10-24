@@ -1145,9 +1145,9 @@ function tabCount(value: number, failed: boolean): number | null {
 <template>
   <PcWorkspace>
     <PcPageHeader
-      title="NetGuard"
+      title="Inbound firewall"
       badge="NetGuard plugin"
-      description="nftables firewall control for the fleet: what you declared, and what each machine reports it actually has."
+      description="What each node accepts inbound (nftables lattice_guard): what you declared, and what each machine reports it actually has. Outbound connections are the Outbound policy page."
     >
       <template #icon><Shield :size="19" /></template>
       <template #actions>
@@ -1179,10 +1179,10 @@ function tabCount(value: number, failed: boolean): number | null {
     <!-- The layers: an underline row of their own, above the layer's own
          toolbar (design review of wave 1, "Tab decision"). The row keeps the
          selected layer in view itself, again when the counts land. -->
-    <PcLensTabs v-model="view" variant="layer" label="NetGuard layers">
+    <PcLensTabs v-model="view" variant="layer" label="Inbound firewall layers">
       <PcLensTab value="overview" label="Overview" />
       <PcLensTab value="nodes" label="Nodes" :count="tabCount(counts.total, realityFailed)" />
-      <PcLensTab value="groups" label="Groups" :count="tabCount(overview.groups.length, overviewFailed)" />
+      <PcLensTab value="groups" label="Security groups" :count="tabCount(overview.groups.length, overviewFailed)" />
       <PcLensTab value="zones" label="Zones" :count="tabCount(overview.zones.length, overviewFailed)" />
     </PcLensTabs>
 
@@ -1302,7 +1302,7 @@ function tabCount(value: number, failed: boolean): number | null {
 
     <PcPanel v-else-if="view === 'groups'" id="pc-panel-groups" role="tabpanel" aria-labelledby="pc-tab-groups" :data-stale="layerStale ? 'true' : undefined" :inert="layerStale || undefined">
       <p class="ng-layer-note">Ordered rules, attached to one or more nodes. The chain policy stays default drop, so anything no rule accepts is dropped. A group folds its rules underneath.</p>
-      <PcEmptyState v-if="overviewFailed" kind="error" title="Groups were not read">
+      <PcEmptyState v-if="overviewFailed" kind="error" title="Security groups were not read">
         <p>The overview request failed, so nothing here is known. The notice above says why.</p>
         <template #actions><PcButton :busy="refreshing" @click="refresh(true)">Try again</PcButton></template>
       </PcEmptyState>
@@ -1317,7 +1317,7 @@ function tabCount(value: number, failed: boolean): number | null {
         @edit="openGroup"
         @delete="(group) => askDelete('group', group.id, group.name)"
       />
-      <PcEmptyState v-else-if="overview.groups.length" kind="no-match" title="No group matches that query">
+      <PcEmptyState v-else-if="overview.groups.length" kind="no-match" title="No security group matches that query">
         <template #icon><Boxes :size="26" /></template>
         <p>Nothing in {{ plural(overview.groups.length, 'group', 'groups') }} matches <span class="pc-mono">{{ groupsQuery.active.value.source.trim() }}</span>. A bare word searches group name, id and description, and each rule's sentence and comment; <span class="pc-mono">port:22</span> finds the rules that name a port.</p>
         <template #actions><PcButton @click="search = ''">Clear the query</PcButton></template>
