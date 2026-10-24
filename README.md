@@ -176,5 +176,5 @@ npm run build
 npm run verify:build
 ```
 
-Build and sign with Go `1.26.9`, Node `22`, the deterministic plugin packer, and
+Build and sign with Go `1.26.10`, Node `22`, the deterministic plugin packer, and
 the trusted LatticeNet Ed25519 publisher seed. Never commit the seed.
