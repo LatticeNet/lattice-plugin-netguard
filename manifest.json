@@ -38,7 +38,7 @@
       {
         "section": "extensions",
         "section_title": "Extensions",
-        "title": "NetGuard",
+        "title": "Inbound firewall",
         "route": "firewall",
         "icon": "Shield",
         "scopes": [
@@ -49,7 +49,7 @@
     "views": [
       {
         "route": "firewall",
-        "title": "NetGuard Firewall",
+        "title": "Inbound firewall",
         "kind": "sandbox"
       }
     ]
