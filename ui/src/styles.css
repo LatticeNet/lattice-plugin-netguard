@@ -202,6 +202,27 @@ ul {
   color: var(--muted-foreground);
 }
 
+/* In a row of columns the line asks the table for 14rem at most: one long
+   list of groups pushed the table past a 1060 px frame, so Seen and the end
+   of this line ("observe only") slid under the pinned actions column. The
+   group names truncate (the cell's title has them all) and the note never
+   does. The folded phone row keeps its one truncated line. */
+.ng-exposure-table .pc-table:not([data-stacked="true"]) .ng-managed-line {
+  display: flex;
+  max-width: 14rem;
+}
+
+.ng-exposure-table .pc-table:not([data-stacked="true"]) .ng-managed-line > :first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ng-exposure-table .pc-table:not([data-stacked="true"]) .ng-managed-note {
+  flex: none;
+  white-space: pre;
+}
+
 .ng-managed-note::before {
   content: " · ";
 }
