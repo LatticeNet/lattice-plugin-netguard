@@ -212,6 +212,19 @@ export function countPosture(rows: readonly PostureRow[]): PostureCounts {
   return counts;
 }
 
+/**
+ * How many nodes report, for the page's proof line: "34 nodes report" when
+ * all do, "33 of 34 nodes report" when some never have. A node that never
+ * reported is in the total but does not report; the line names it again in
+ * its own segment.
+ */
+export function reportingLabel(counts: Pick<PostureCounts, "total" | "neverReported">): string {
+  const reporting = counts.total - counts.neverReported;
+  const nodes = counts.total === 1 ? "node" : "nodes";
+  if (counts.neverReported === 0) return `${counts.total} ${nodes} report${counts.total === 1 ? "s" : ""}`;
+  return `${reporting} of ${counts.total} ${nodes} report`;
+}
+
 export function matchesFilter(row: PostureRow, filter: PostureFilter): boolean {
   switch (filter) {
     case "drifted":

@@ -125,7 +125,7 @@ import {
   type StateSender,
 } from "./pageState";
 import { nodeGroupsBySecurityGroup } from "./nodeGroups";
-import { coverageLabel, countPosture, joinPosture, type PostureRow } from "./posture";
+import { coverageLabel, countPosture, joinPosture, reportingLabel, type PostureRow } from "./posture";
 import type { MenuItem } from "./rowMenu";
 import { useNow } from "./clock";
 import { ageLabel, clockUtc, stampUtc } from "./time";
@@ -1209,7 +1209,8 @@ const proofSegments = computed(() => {
   // The console's form: a relative age here, the absolute instant in the line's title.
   if (newestObserved.value) segments.push(`observed ${ageLabel(newestObserved.value, now.value)} ago`);
   else segments.push("not observed yet");
-  segments.push(`${plural(counts.value.total, "node", "nodes")} report`);
+  // A node that never reported is in the total, not among those that report (its own segment follows).
+  segments.push(reportingLabel(counts.value));
   if (counts.value.stale) segments.push(`${counts.value.stale} stale`);
   if (counts.value.neverReported) segments.push(`${counts.value.neverReported} never reported`);
   if (readingSnapshots.value) segments.push(`reading ${detailProgress.value.done} of ${detailProgress.value.total} snapshots`);
