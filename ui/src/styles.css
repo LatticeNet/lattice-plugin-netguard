@@ -1505,3 +1505,85 @@ ul {
     text-align: right;
   }
 }
+
+/* Security groups, node-group bindings and zones keep their columns on a
+   phone (one menu per row, compared down a column), so below 720 the menu
+   stays pinned at the right edge, as it is on a wide frame, beside the
+   pinned name; the columns between scroll under its hairline. The chassis
+   unpins it there, which left every row's only menu past the right edge
+   at 375 and at 528 (the frame inside the 768 console). */
+@media (max-width: 720px) {
+  .ng-pinned-actions .pc-table td.pc-actions,
+  .ng-pinned-actions .pc-table th.pc-actions {
+    position: sticky;
+    right: 0;
+    box-shadow: -1px 0 0 var(--border);
+  }
+
+  .ng-pinned-actions .pc-table th.pc-actions {
+    box-shadow: -1px 0 0 var(--border), inset 0 -1px 0 var(--border);
+  }
+}
+
+/* On a phone the two pins left the columns between them about 30 px, so
+   the name takes 45% of the frame and the menu column is its trigger with
+   no padding, and the first column between them reads whole. A rule's
+   sentence then takes its own line under its number and action and wraps,
+   rather than ending at its first word. */
+@media (max-width: 480px) {
+  .ng-pinned-actions .pc-table th.pc-name,
+  .ng-pinned-actions .pc-table td.pc-name {
+    width: 45vw;
+    min-width: 0;
+    max-width: 45vw;
+  }
+
+  .ng-pinned-actions .pc-table th.pc-actions,
+  .ng-pinned-actions .pc-table td.pc-actions {
+    width: 44px;
+    padding-right: 0;
+    padding-left: 0;
+    text-align: center;
+  }
+
+  .ng-pinned-actions .ng-rule-line {
+    flex-wrap: wrap;
+  }
+
+  .ng-pinned-actions .ng-rule-sentence {
+    flex-basis: 100%;
+    overflow-wrap: anywhere;
+    white-space: normal;
+  }
+}
+
+/* Below 620 the layer row is one segmented line that scrolls sideways
+   (chassis), and four layers with their counts need about 385 px of 341 at
+   375: "Zones" was cut with nothing to say the row scrolls. The side with
+   more tabs fades out, and stops fading at its end. A scroll timeline
+   drives it, so a row that fits has no timeline and no fade; a browser
+   without scroll timelines shows the row as before. The mask's opaque stop
+   is a token: only its alpha counts. */
+@media (max-width: 620px) {
+  @supports (animation-timeline: scroll(self inline)) {
+    .pc-lens-tabs[data-variant="layer"] {
+      animation: ng-row-edges linear both;
+      animation-timeline: scroll(self inline);
+    }
+  }
+}
+
+@keyframes ng-row-edges {
+  0% {
+    mask-image: linear-gradient(to right, var(--foreground) calc(100% - 40px), transparent);
+  }
+
+  2%,
+  98% {
+    mask-image: linear-gradient(to right, transparent, var(--foreground) 40px, var(--foreground) calc(100% - 40px), transparent);
+  }
+
+  100% {
+    mask-image: linear-gradient(to left, var(--foreground) calc(100% - 40px), transparent);
+  }
+}

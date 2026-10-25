@@ -54,7 +54,7 @@ function inactiveTitle(binding: NodeGroupBinding): string {
 </script>
 
 <template>
-  <PcTable :min-width="640" :stacked="false" label="Node groups bound to security groups">
+  <PcTable class="ng-pinned-actions" :min-width="640" :stacked="false" label="Node groups bound to security groups">
     <template #head>
       <PcTh name>Node group</PcTh>
       <PcTh>Security groups, in order</PcTh>
