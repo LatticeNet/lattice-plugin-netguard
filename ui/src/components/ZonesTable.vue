@@ -62,7 +62,7 @@ function listOr(values: readonly string[] | undefined, zone: GuardZone): string 
 </script>
 
 <template>
-  <PcTable :min-width="720" :stacked="false" label="Trusted zones">
+  <PcTable class="ng-pinned-actions" :min-width="720" :stacked="false" label="Trusted zones">
     <template #head>
       <PcTh name>Zone</PcTh>
       <PcTh>Interfaces</PcTh>

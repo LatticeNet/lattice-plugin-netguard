@@ -125,7 +125,7 @@ import {
   type StateSender,
 } from "./pageState";
 import { nodeGroupsBySecurityGroup } from "./nodeGroups";
-import { coverageLabel, countPosture, joinPosture, type PostureRow } from "./posture";
+import { coverageLabel, countPosture, joinPosture, reportingLabel, type PostureRow } from "./posture";
 import type { MenuItem } from "./rowMenu";
 import { useNow } from "./clock";
 import { ageLabel, clockUtc, stampUtc } from "./time";
@@ -1209,7 +1209,8 @@ const proofSegments = computed(() => {
   // The console's form: a relative age here, the absolute instant in the line's title.
   if (newestObserved.value) segments.push(`observed ${ageLabel(newestObserved.value, now.value)} ago`);
   else segments.push("not observed yet");
-  segments.push(`${plural(counts.value.total, "node", "nodes")} report`);
+  // A node that never reported is in the total, not among those that report (its own segment follows).
+  segments.push(reportingLabel(counts.value));
   if (counts.value.stale) segments.push(`${counts.value.stale} stale`);
   if (counts.value.neverReported) segments.push(`${counts.value.neverReported} never reported`);
   if (readingSnapshots.value) segments.push(`reading ${detailProgress.value.done} of ${detailProgress.value.total} snapshots`);
@@ -1378,7 +1379,7 @@ function tabCount(value: number, failed: boolean): number | null {
       <!-- The creating verb lives on the layer it creates in, and only once that layer was read. -->
       <template v-if="toolbarVerb" #primary>
         <PcButton v-if="toolbarVerb === 'zone'" variant="primary" @click="openZone()"><template #icon><Plus :size="15" /></template>New zone</PcButton>
-        <PcButton v-else variant="primary" @click="openGroup()"><template #icon><Plus :size="15" /></template>New group</PcButton>
+        <PcButton v-else variant="primary" @click="openGroup()"><template #icon><Plus :size="15" /></template>New security group</PcButton>
       </template>
     </PcToolbar>
 
@@ -1498,7 +1499,7 @@ function tabCount(value: number, failed: boolean): number | null {
         <template #icon><Boxes :size="26" /></template>
         <p>A group is a reusable, ordered rule set. Create one, then attach it to a managed node in that node's binding.</p>
         <template v-if="canAdmin" #actions>
-          <PcButton variant="primary" @click="openGroup()"><template #icon><Plus :size="15" /></template>New group</PcButton>
+          <PcButton variant="primary" @click="openGroup()"><template #icon><Plus :size="15" /></template>New security group</PcButton>
         </template>
       </PcEmptyState>
 

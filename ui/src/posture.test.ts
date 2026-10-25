@@ -4,6 +4,7 @@ import {
   attentionRank,
   definiteTime,
   countPosture,
+  reportingLabel,
   coverageLabel,
   driftToneFor,
   driftUnknownReason,
@@ -106,6 +107,16 @@ describe("countPosture", () => {
     expect(counts.withApplyError).toBe(1);
     expect(counts.fresh + counts.stale + counts.neverReported).toBe(counts.total);
     expect(counts.inSync + counts.drifted + counts.driftUnknown).toBe(counts.total);
+  });
+});
+
+describe("reportingLabel", () => {
+  it("counts only the nodes that report, out of all of them", () => {
+    expect(reportingLabel({ total: 34, neverReported: 1 })).toBe("33 of 34 nodes report");
+    expect(reportingLabel({ total: 34, neverReported: 0 })).toBe("34 nodes report");
+    expect(reportingLabel({ total: 1, neverReported: 0 })).toBe("1 node reports");
+    expect(reportingLabel({ total: 1, neverReported: 1 })).toBe("0 of 1 node report");
+    expect(reportingLabel({ total: 0, neverReported: 0 })).toBe("0 nodes report");
   });
 });
 

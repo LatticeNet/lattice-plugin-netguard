@@ -127,7 +127,7 @@ function firstRuleId(group: SecurityGroup): string {
 </script>
 
 <template>
-  <PcTable :min-width="720" :stacked="false" label="Security groups">
+  <PcTable class="ng-pinned-actions" :min-width="720" :stacked="false" label="Security groups">
     <template #head>
       <PcTh name>Group / rule</PcTh>
       <PcTh>Rules</PcTh>
